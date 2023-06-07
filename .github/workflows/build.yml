@@ -14,9 +14,16 @@ defaults:
 
 jobs:
   cmake-builds:
+    name: CMake Release packages
     uses: ./.github/workflows/cmake-builds.yml
 
+  ## Don't execute sanitizer builds. Yet.
+  ## cmake-sanitizer-builds:
+  ##   name: CMake Debug with sanitizers
+  ###  uses: ./.github/workflows/sanitizer-builds.yml
+
   makefile:
+    name: SIMH Makefile
     runs-on: ${{ matrix.os }}
     strategy:
       #-

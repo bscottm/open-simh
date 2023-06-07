@@ -48,6 +48,7 @@ if (WITH_NETWORK)
           $<$<BOOL:${WIN32}>:${CMAKE_SOURCE_DIR}/slirp_glue/qemu/win32/include>)
 
   target_compile_options(slirp PRIVATE ${EXTRA_TARGET_CFLAGS})
+  add_sanitizers(slirp)
   target_link_options(slirp PRIVATE ${EXTRA_TARGET_LFLAGS})
   target_link_libraries(slirp PUBLIC $<$<BOOL:${WIN32}>:Iphlpapi>)
 else (WITH_NETWORK)

@@ -843,6 +843,10 @@ following the table.
 | `WARNINGS_FATAL`     | disabled           | Compiler warnings are fatal errors, e.g. set "-Werror" on `gcc`, "/WX" for MSVC |
 | `RELEASE_LTO`        | disabled           | Use Link-Time Optimization in Release builds, where supported. Normally disabled; the CI/CD builds turn this on to catch additional warnings emitted with higher optimization and LTO. |
 | `DEBUG_WALL`         | disabled           | Turn on maximal warnings for Debug builds, e.g., `-Wall` for GCC/Clang and `/W4` for MSVC. |
+| `SANITIZE_ADDRESS`   | disabled           | Enable address sanitizer compiler flags. |
+| `SANITIZE_MEMORY`    | disabled           | Enable memory sanitizer compiler flags. |
+| `SANITIZE_THREAD`    | disabled           | Enable thread sanitizer compiler flags. |
+| `SANITIZE_UNDEFINED` | disabled           | Enable undefined behavior compiler flags. |
 
 The following table summarizes "enabled" and "disabled" option values on the command line:
 

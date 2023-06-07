@@ -1,0 +1,70 @@
+name: Address, memory and thread santizer build workflows
+
+on:
+  workflow_call:
+
+jobs:
+  sanitizer-unix:
+    name: Unixen
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        sanitizer: [ address, memory, thread, undef ]
+    env:
+      flavor:  ${{ (startsWith( matrix.os, 'ubuntu' ) && 'ninja') || (startsWith( matrix.os, 'macos')   && 'xcode') }}
+      deparg:  ${{ (startsWith( matrix.os, 'ubuntu' ) && 'linux') || (startsWith( matrix.os, 'macos')   && 'osx') }}
+      ## For the Ubuntu Linux flavor builds, use Clang instead of GCC. The sanitizers
+      ## are better suited to Clang.
+      ccenv:   ${{ (startsWith( matrix.os, 'ubuntu' ) && 'CC=clang') || '' }}
+      cxxenv:  ${{ (startsWith( matrix.os, 'ubuntu' ) && 'CXX=clang') || '' }}
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: |
+        sh -ex .travis/deps.sh ${{ env.deparg }}
+    - name: Install Ninja builder
+      if: ${{ startsWith( matrix.os, 'ubuntu') }}
+      run: |
+        sudo apt install -ym ninja-build
+    - name: cmake-builder.sh
+      run: |
+        ${{ env.ccenv }} ${{ env.cxxenv }} \
+          cmake/cmake-builder.sh --config Release --flavor ${{ env.flavor }} --sanitizer ${{ matrix.sanitizer }} --notest --parallel --verbose
+    - name: SIMH simulator suite test
+      run: |
+        ${{ env.ccenv }} ${{ env.cxxenv }} \
+          cmake/cmake-builder.sh --config Release --flavor ${{ env.flavor }} --sanitizer ${{ matrix.sanitizer }} --testonly
+
+  ## MS only supports address sanitization:
+  cmake-vs2022:
+    name: VS 2022
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [windows-latest]
+        sanitizer: [ address ]
+    steps:
+    - uses: actions/checkout@v3
+    - name: vs2022 build
+      shell: pwsh
+      run: |
+          $ErrorActionPreference="Stop"
+          $WarningPreference="Continue"
+          # Fix PATH so that "C:\Strawberry" (Strawberry Perl) doesn't mess with the build
+          # CMake WILL find incompatible libraries within Strawberry.
+          $fixPATH = (${env:PATH}.Split(';') | `
+              Where-Object { $_ -notlike "*\Strawberry\*" -and $_ -notlike "*/Strawberry/*" }) -join ';'
+          $env:PATH = $fixPATH
+          # Make this a vcpkg build:
+          $env:VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT
+          Push-Location $env:VCPKG_ROOT
+          git pull
+          Pop-Location
+          ./cmake/cmake-builder.ps1 -flavor vs2022 -config Debug -clean -sanitizer ${{ matrix.sanitizer }} -notest --parallel -verbose
+    - name: SIMH simulator suite test
+      shell: pwsh
+      run: |
+          ./cmake/cmake-builder.ps1 -flavor vs2022 -config Debug -sanitizer ${{ matrix.sanitizer }} -testOnly
