@@ -5,7 +5,7 @@
   - [Why CMake?](#why-cmake)
   - [Before You Begin Building...](#before-you-begin-building)
     - [Toolchains and Tools](#toolchains-and-tools)
-      - [Ninja: "failed recompaction: Permission denied"](#ninja-file-recompaction-permission-denied)
+      - [Ninja: "failed recompaction: Permission denied"](#ninja-failed-recompaction-permission-denied)
       - [Windows XP-compatible/Server 2003 binaries](#windows-xp-compatibleserver-2003-binaries)
     - [Feature Libraries](#feature-libraries)
       - [Linux, macOS and MinGW-w64](#linux-macos-and-mingw-w64)
@@ -1044,7 +1044,7 @@ within the IDE. The walkthrough provides directions for VS 2022 and VS 2019.
 
      - When all dependency feature libraries have been built, the build process
        __will__ unexpectedly terminate with a _"failed recompaction: Permission
-       denied"_ error (see [this `ninja` note](#ninja-file-recompaction-permission-denied).)
+       denied"_ error (see [this `ninja` note](#ninja-failed-recompaction-permission-denied).)
 
        Choose `Delete Cache and Reconfigure` from the `Project` menu. This will
        cause CMake to reconfigure the project and detect the dependency feature
