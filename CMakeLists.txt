@@ -96,7 +96,7 @@ if (NOT CMAKE_CONFIGURATION_TYPES)
 endif ()
 
 # SIMH_SYSTEM_ID: Roughly analogous to the autoconf system triple. Used (almost exclusively)
-# as part of the depedencies' top-level directory name. 
+# as part of the depedencies' top-level directory name.
 set(SIMH_SYSTEM_ID ${CMAKE_SYSTEM_NAME})
 string(REPLACE "." ";" version_list ${CMAKE_SYSTEM_VERSION})
 list(GET version_list 0 version_major)
@@ -183,7 +183,7 @@ option(WITH_REGEX
        TRUE)
 option(PREFER_PCRE
        "Prefer (=1)/ignore (=0) Prefer PCRE over PCRE2 (def: ignore)"
-       TRUE)
+       FALSE)
 option(WITH_NETWORK
        "Enable (=1)/disable (=0) simulator networking support. (def: enabled)"
        TRUE)
@@ -247,7 +247,7 @@ set(DEP_CMAKE_ARGS "-Wno-dev" "--no-warn-unused-cli")
 if (NOT (USING_VCPKG OR NO_DEP_BUILD) AND NOT EXISTS ${SIMH_DEP_TOPDIR})
     message(STATUS "Creating dependency library directory hierarchy")
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${SIMH_DEP_TOPDIR} ${SIMH_DEP_TOPDIR}/include ${SIMH_DEP_TOPDIR}/lib 
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${SIMH_DEP_TOPDIR} ${SIMH_DEP_TOPDIR}/include ${SIMH_DEP_TOPDIR}/lib
                     ${SIMH_DEP_TOPDIR}/bin
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
