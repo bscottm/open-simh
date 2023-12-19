@@ -3143,6 +3143,11 @@ switch (dev->eth_api) {
       break;
   case ETH_API_VMN:
       netname = "vmnet";
+  case ETH_API_NONE:
+      netname = "(none)";
+      break;
+  default:
+      netname = "(unknown)";
       break;
   }
 sprintf(msg, "%s(%s): ", where, netname);
