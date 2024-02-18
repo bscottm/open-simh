@@ -250,22 +250,6 @@ class BESM6Simulator(SIMHBasicSimulator):
             'unset(cand_fonts)',
             'unset(cand_fontdirs)\n']))
 
-class KA10Simulator(SIMHBasicSimulator):
-    def __init__(self, sim_name, dir_macro, test_name, buildrom):
-        super().__init__(sim_name, dir_macro, test_name, buildrom)
-
-    def write_simulator(self, stream, indent, test_label='ka10'):
-        super().write_simulator(stream, indent, test_label)
-        stream.write('\n')
-        stream.write('\n'.join([
-            'if (PANDA_LIGHTS)',
-            '  target_sources({0} PUBLIC {1}/ka10_lights.c)'.format(self.sim_name, self.dir_macro),
-            '  target_compile_definitions({0} PUBLIC PANDA_LIGHTS)'.format(self.sim_name),
-            '  target_link_libraries({0} PUBLIC usb-1.0)'.format(self.sim_name),
-            'endif (PANDA_LIGHTS)'
-        ]))
-        stream.write('\n')
-
 class IBM650Simulator(SIMHBasicSimulator):
     '''The IBM650 simulator creates relatively deep stacks, which will fail on Windows.
     Adjust target simulator link flags to provide a 8M stack, similar to Linux.

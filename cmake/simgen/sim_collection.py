@@ -2,6 +2,7 @@ import pprint
 
 import simgen.parse_makefile as SPM
 import simgen.basic_simulator as SBS
+import simgen.pdp10_simulator as PDP10
 import simgen.vax_simulators as VAXen
 import simgen.utils as SU
 
@@ -17,7 +18,7 @@ _special_simulators = {
     "besm6": SBS.BESM6Simulator,
     "i650": SBS.IBM650Simulator,
     "ibm1130": SBS.IBM1130Simulator,
-    "pdp10-ka": SBS.KA10Simulator,
+    "pdp10-ka": PDP10.KA10Simulator,
     "vax": VAXen.VAXSimulator,
     "vax730": VAXen.BasicVAXSimulator
 }
