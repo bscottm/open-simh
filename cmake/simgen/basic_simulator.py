@@ -308,7 +308,8 @@ class IBM1130Simulator(SIMHBasicSimulator):
             '    ## Add GUI support, compile in resources:',
             '    target_compile_definitions(ibm1130 PRIVATE GUI_SUPPORT)',
             '    target_sources(ibm1130 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ibm1130.rc)',
-            'endif()'
+            'endif()',
+            'include (utils/CMakeLists.txt)'
         ]))
 
 
