@@ -44,9 +44,13 @@ end
 #include <stdlib.h>
 #include <string.h>
 #include "util_io.h"
-#ifdef WIN32                    // for Windows binary file mode setting
+#ifdef _WIN32                   // for Windows binary file mode setting
 #  include <io.h>
 #  include <fcntl.h>
+#  define strcasecmp  _stricmp
+#  define strncasecmp _strnicmp
+#else
+#  include <unistd.h>          // for unlink() and friends
 #endif
 
 #define TRUE  1
@@ -58,15 +62,16 @@ typedef int BOOL;
 BOOL failed = FALSE;
 int ncards = 0;
 
-void tobinary (char *fnin, char *fnout);
-void toascii (char *fnin, char *fnout);
+void cvtbinary (const char *fnin, const char *fnout);
+void cvtascii (const char *fnin, const char *fnout);
 void bail (char *msg);
 
 int main (int argc, char **argv)
 {
     enum {MODE_UNKNOWN, MODE_TOBINARY, MODE_TOASCII} mode = MODE_UNKNOWN;
     int i;
-    char *arg, *fnin = NULL, *fnout = NULL;
+    char *arg, *fnout = NULL;
+    const char *fnin = NULL;
     static char usestr[] = "Usage: punches -b|-a [infile [outfile]]";
 
     for (i = 1; i < argc; i++) {
@@ -99,15 +104,15 @@ int main (int argc, char **argv)
     util_io_init();                             // check CPU for big/little endianness
 
     if (mode == MODE_TOBINARY)
-        tobinary(fnin, fnout);
+        cvtbinary(fnin, fnout);
     else if (mode == MODE_TOASCII)
-        toascii(fnin, fnout);
+        cvtascii(fnin, fnout);
     else
         bail(usestr);
 
     if (failed) {
         if (fnin != NULL) {                     // if there was an error, delete output file if possible
-            unlink(fnout);
+            util_unlink(fnout);
             fprintf(stderr, "Output file \"%s\" deleted\n", fnout);
             exit(1);
         }
@@ -122,7 +127,7 @@ int main (int argc, char **argv)
 
 // alltrim - remove string's leading and trailing whitespace
 
-char *alltrim (char *str)
+char *alltrim (char *str, size_t strsiz)
 {
     char *c, *e;
 
@@ -130,7 +135,7 @@ char *alltrim (char *str)
         ;
 
     if (c > str)                                // if there was some, copy string down over it
-        strcpy(str, c);
+        util_strcpy(str, strsiz - (c - str) - 1, c);
 
     for (e = str-1, c = str; *c; c++)           // find last non-white character
         if (*c > ' ')
@@ -140,14 +145,14 @@ char *alltrim (char *str)
     return str;                                 // return pointer to string
 }
 
-void tobinary (char *fnin, char *fnout)
+void cvtbinary (const char *fnin, const char *fnout)
 {
     FILE *fin, *fout;
     BOOL gotnum;
     int col, v, lineno = 0;
     char str[256], *c;
     unsigned short buf[80], punches;
-    static unsigned short punchval[13] = {
+    static const unsigned short punchval[13] = {
         0x2000, 0x1000, 0x0800, 0x0400, 0x0200,         // 0, 1, 2, 3, 4
         0x0100, 0x0080, 0x0040, 0x0020, 0x0010,         // 5, 6, 7, 8, 9
         0x0000,                                         // there is no 10 punch
@@ -156,7 +161,7 @@ void tobinary (char *fnin, char *fnout)
     if (fnin == NULL) {
         fin = stdin;
     }
-    else if ((fin = fopen(fnin, "r")) == NULL) {
+    else if ((fin = util_fopen(fnin, "r")) == NULL) {
         perror(fnin);
         exit(1);
     }
@@ -167,7 +172,7 @@ void tobinary (char *fnin, char *fnout)
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
     }
-    else if ((fout = fopen(fnout, "wb")) == NULL) {
+    else if ((fout = util_fopen(fnout, "wb")) == NULL) {
         perror(fnout);
         exit(1);
     }
@@ -175,21 +180,21 @@ void tobinary (char *fnin, char *fnout)
     col = 0;                                        // we are starting between cards, expect start as first data line
 
     while (fgets(str, sizeof(str), fin) != NULL && ! failed) {
-        alltrim(str);                               // trim leading/trailing blanks (including newline)
+        alltrim(str, arraysize(str));               // trim leading/trailing blanks (including newline)
         lineno++;                                   // count input line
 
         if (*str == ';' || *str == '#'|| *str == '*' || ! *str)
             continue;                               // ignore comment or blank line
 
-        if (strnicmp(str, "start", 5) == 0) {       // start marks new card, proceed to column 1 (strnicmp so trailing comment is ignored)
+        if (strncasecmp(str, "start", 5) == 0) {    // start marks new card, proceed to column 1 (strncasecmp so trailing comment is ignored)
             if (col == 0)
                 col = 1;
             else {
-                fprintf(stderr, "\"start\" encountered where column %d was expected, at line %d\n", lineno);
+                fprintf(stderr, "\"start\" encountered where column %d was expected, at line %d\n", col, lineno);
                 failed = TRUE;
             }
         }
-        else if (strnicmp(str, "end", 3) == 0) {    // end is expected as 81'st data line
+        else if (strncasecmp(str, "end", 3) == 0) { // end is expected as 81'st data line
             if (col == 81) {
                 fxwrite(buf, 2, 80, fout);          // write binary card image to output file
                 ncards++;                           // increment card count
@@ -208,7 +213,7 @@ void tobinary (char *fnin, char *fnout)
             }
         }
         else if (BETWEEN(col, 1, 80)) {             // for column 1 to 80, we expect a data line
-            if (strnicmp(str, "blank", 5) == 0) {   // blank indicates an unpunched column
+            if (strncasecmp(str, "blank", 5) == 0) {// blank indicates an unpunched column
                 buf[col-1] = 0;
                 col++;
             }
@@ -264,13 +269,14 @@ void tobinary (char *fnin, char *fnout)
     fclose(fout);
 }
 
-void toascii (char *fnin, char *fnout)
+void cvtascii (const char *fnin, const char *fnout)
 {
     FILE *fin, *fout;
     unsigned short buf[80], mask;
-    int nread, col, row;
+    size_t nread;
+    int col, row;
     BOOL first;
-    static char *punchname[] = {"12", "11", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
+    static const char *punchname[] = {"12", "11", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
 
     if (fnin == NULL) {
         fin = stdin;                                    // no input file named, read from stdin
@@ -278,7 +284,7 @@ void toascii (char *fnin, char *fnout)
         _setmode(_fileno(stdin), _O_BINARY);            // (on Windows, must set binary mode)
 #endif
     }
-    else if ((fin = fopen(fnin, "rb")) == NULL) {       // open named input file
+    else if ((fin = util_fopen(fnin, "rb")) == NULL) {  // open named input file
         perror(fnin);
         exit(1);
     }
@@ -286,7 +292,7 @@ void toascii (char *fnin, char *fnout)
     if (fnout == NULL) {                                // no output file named, write to stdout
         fout = stdout;
     }
-    else if ((fout = fopen(fnout, "wb")) == NULL) {     // open named output file
+    else if ((fout = util_fopen(fnout, "wb")) == NULL) {// open named output file
         perror(fnout);
         exit(1);
     }

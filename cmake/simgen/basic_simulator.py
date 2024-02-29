@@ -7,8 +7,9 @@ import simgen.packaging as SPKG
 class SIMHBasicSimulator:
     """
     """
-    def __init__(self, sim_name, dir_macro, test_name, buildrom):
+    def __init__(self, sim_name, dir_macro, test_name, buildrom, test_args=None):
         self.sim_name = sim_name
+        ## self.dir_macro     -> Directory macro (e.g., "${PDP11D}" for source
         self.dir_macro = dir_macro
         self.test_name = test_name
         self.int64 = False
@@ -22,6 +23,10 @@ class SIMHBasicSimulator:
         self.besm6_sdl_hack = False
         ## self.uses_aio       -> True if the simulator uses AIO
         self.uses_aio = False
+        ## self.test_args      -> Simulator flags to pass to the test phase. Used by ibm1130 to
+        ##                        pass "-g" to disable to the GUI.
+        self.test_args = test_args
+
         self.sources = []
         self.defines = []
         self.includes = []
@@ -128,6 +133,8 @@ class SIMHBasicSimulator:
             stream.write('\n' + indent4 + "BESM6_SDL_HACK")
         if self.uses_aio:
             stream.write('\n' + indent4 + "USES_AIO")
+        if self.test_args:
+            stream.write('\n' + indent4 + 'TEST_ARGS "{}"'.format(self.test_args))
         if self.buildrom:
             stream.write('\n' + indent4 + "BUILDROMS")
         stream.write('\n' + indent4 + "LABEL " + test_label)
@@ -292,25 +299,6 @@ class IBM650Simulator(SIMHBasicSimulator):
             '    endif ()',
             'endif()'
         ]))
-
-class IBM1130Simulator(SIMHBasicSimulator):
-    '''The IBM650 simulator creates relatively deep stacks, which will fail on Windows.
-    Adjust target simulator link flags to provide a 8M stack, similar to Linux.
-    '''
-    def __init__(self, sim_name, dir_macro, test_name, buildrom):
-        super().__init__(sim_name, dir_macro, test_name, buildrom)
-
-    def write_simulator(self, stream, indent, test_label='ibm650'):
-        super().write_simulator(stream, indent, test_label)
-        stream.write('\n'.join([
-            '',
-            'if (WIN32)',
-            '    target_compile_definitions(ibm1130 PRIVATE GUI_SUPPORT)',
-            '    ## missing source in IBM1130?'
-            '    ## target_sources(ibm1130 PRIVATE ibm1130.c)',
-            'endif()'
-        ]))
-
 
 if '_dispatch' in pprint.PrettyPrinter.__dict__:
     def sim_pprinter(pprinter, sim, stream, indent, allowance, context, level):

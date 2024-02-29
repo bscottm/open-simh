@@ -19,12 +19,25 @@
 // 03-Dec-2004 Split get_let and print_let so we could get listings for specific files.
 // 06-Dec-2004 Added printout of detailed file info (print_xxx_info) and dump, and listing of calls
 // 21-Dec-2006 Added file type column in standard output mode
+// 29-Feb-2024 Linux, macOS platform updates
 // -------------------------------------------------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "util_io.h"
+
+// -------------------------------------------------------------------------------------------
+// PLATFORM COMPATIBILITY
+// -------------------------------------------------------------------------------------------
+
+#if !defined(min)
+#  if defined(__GNUC__) || defined(__clang__)
+#    define min(a, b) ({ __typeof__(a) _a = (a); __typeof__(a) _b = (b); _a < _b ? _a : _b; })
+#  else
+#    define min(a, b) ((a) < (b) ? (a) : (b))
+#  endif
+#endif
 
 // -------------------------------------------------------------------------------------------
 // DEFINITIONS
@@ -161,7 +174,7 @@ BOOL verbose = FALSE;                               // verbose switch
 BOOL show_all = FALSE;                              // switch to display alternate file entries
 BOOL dumpslet = FALSE;                              // dump SLET switch
 BOOL do_dump = FALSE;
-char *ftname[4] = {"DSF", "???", "DCI", "DDF"};     // DMS2 filetype names
+const char *ftname[4] = {"DSF", "???", "DCI", "DDF"}; // DMS2 filetype names
     
 LETENTRY *flet = NULL, *let = NULL;                 // pointers to contents of FLET and LET
 
@@ -242,21 +255,21 @@ BOOL is_system = FALSE;                                 // TRUE if this is a sys
 
 void getsec (uint16 secno);                             // read sector by number
 void getdata (void *buf, uint16 dbaddr, uint16 offset, uint16 nwords);  // read data from file relative to its disk block address
-void bail (char *msg);                                  // print error message and exit
+void bail (const char *msg);                            // print error message and exit
 void print_slet (void);                                 // print contents of SLET
 void get_let (LETENTRY **listhead, uint16 secno);       // read FLET or LET, building linked list
-void print_let (char *title, LETENTRY *listhead);       // print contents of FLET or LET
-void list_named_files (char *name, char *image) ;       // print info for specified file(s)
+void print_let (const char *title, LETENTRY *listhead); // print contents of FLET or LET
+void list_named_files (char *name, const char *image) ; // print info for specified file(s)
 void print_onefile (LETENTRY *entry, BOOL in_flet);     // print detailed info about one particular file
 int  ebcdic_to_ascii (int ch);                          // convert EBCDIC character to ASCII
-void convert_namecode (uint16 *namecode, char *name);   // convert DMS name code words into ASCII filename
+void convert_namecode (const uint16 *namecode, char *name); // convert DMS name code words into ASCII filename
 char *upcase (char *str);                               // convert string to upper case
-void commas (int n, int width);                         // print number n with commas
-char *astring (char *str);                              // allocate memory for and return copy of string
-void print_dsf_info (LETENTRY *entry);                  // print information about a Disk System Format file
-void print_dci_info (LETENTRY *entry);                  // print information about a Disk Core Image file
+void commas (int n, size_t width);                      // print number n with commas
+char *astring (const char *str);                        // allocate memory for and return copy of string
+void print_dsf_info (const LETENTRY *entry);            // print information about a Disk System Format file
+void print_dci_info (const LETENTRY *entry);            // print information about a Disk Core Image file
 void print_ddf_info (LETENTRY *entry);                  // print information about a Disk Data Format file
-char * file_progtype (LETENTRY *entry);                 // description of module type
+char * file_progtype (const LETENTRY *entry);           // description of module type
 
 // -------------------------------------------------------------------------------------------
 // main - main routine
@@ -266,9 +279,10 @@ int main (int argc, char **argv)
 {
     int i;
     char *arg, cartid[10];
-    char *image = NULL;
+    const char *image = NULL;
     FILEARG *fileargs = NULL, *filearg, *filearg_tail = NULL;
-    char *usestr = "Usage: disklist [-sadv] diskfile [filename ...]\n"
+    const char *usestr = 
+                   "Usage: disklist [-sadv] diskfile [filename ...]\n"
                    "\n"
                    "Lists contents of fixed and user area directories in IBM 1130 DMS 2\n"
                    "disk image file \"diskfile\". With the optional filename argument(s)\n"
@@ -323,7 +337,7 @@ int main (int argc, char **argv)
     if (image == NULL)                                      // filename was not specified
         bail(usestr);
 
-    if ((fd = fopen(image, "rb")) == NULL) {                // open file in binary mode
+    if ((fd = util_fopen(image, "rb")) == NULL) {           // open file in binary mode
         perror(image);                                      // print reason for open failure and exit
         return 1;
     }
@@ -339,7 +353,7 @@ int main (int argc, char **argv)
 
     printf("Filename: %s", image);
 
-    sprintf(cartid, "%04x", sector.data[3]);                // display cartridge ID in upper case
+    util_sprintf(cartid, arraysize(cartid), "%04x", sector.data[3]); // display cartridge ID in upper case
     printf("   Cartridge ID: %s", upcase(cartid));
     if (show_all)
         printf("   Copy: number %d", sector.data[4]);
@@ -403,14 +417,14 @@ char *upcase (char *str)
 // commas - print n as a decimal number with commas; width is minimum width
 // -------------------------------------------------------------------------------------------
 
-void commas (int n, int width)
+void commas (int n, size_t width)
 {
     char fmt[20];
 #ifdef THOUSANDS_SEP
-    int nchar;
+    size_t nchar;
     char tmp[20], *cin, *cout;
 
-    sprintf(tmp, "%d", n);                  // format number n into string
+    util_sprintf(tmp, arraysize(tmp), "%d", n); // format number n into string
     nchar = strlen(tmp);                    // get length of string
 
     for (cin = tmp, cout = fmt; *cin; ) {   // scan through the formatted number
@@ -427,9 +441,12 @@ void commas (int n, int width)
 
 #endif
 
-    width -= strlen(fmt);                   // get width shortage
-    while (--width >= 0)                    // output spaces if necessary
-        putchar(' ');
+    if (width > strlen(fmt)) {
+        /* Right pad out with spaces. */
+        width -= strlen(fmt);               // get width shortage
+        while (width-- > 0)                 // output spaces if necessary
+            putchar(' ');
+    }
 
     fputs(fmt, stdout);                     // print formatted number
 }
@@ -438,7 +455,7 @@ void commas (int n, int width)
 // bail - print fatal error message and exit
 // -------------------------------------------------------------------------------------------
 
-void bail (char *msg)
+void bail (const char *msg)
 {
     fprintf(stderr, "%s\n", msg);
     exit(1);
@@ -484,7 +501,7 @@ void getsec (uint16 secno)
 
 void getdata (void *buf, uint16 dbaddr, uint16 offset, uint16 nwords)
 {
-    uint16 secno, nsec, nw;
+    uint16 secno, nsec;
 
     if (nwords == 0)
         return;
@@ -498,16 +515,21 @@ void getdata (void *buf, uint16 dbaddr, uint16 offset, uint16 nwords)
     offset -= nsec*SEC_WORDS;                           // ultimate offset within sector
 
     for (;;) {
+        uint16 nw;
+
         getsec(secno);                                  // read desired sector
         nw = min(SEC_WORDS-offset, nwords);             // number of words to copy from this sector
         memcpy(buf, &sector.data[offset], nw*2);        // copy the data
 
-        if ((nwords -= nw) <= 0)                        // decrement remaining word count
+        if (nwords <= nw)                               // decrement remaining word count
             break;
+        nwords -= nw;
 
         secno++;                                        // bump sector
         offset = 0;                                     // no offset in subsequent sector(s)
-        ((uint16 *) buf) += nw;                         // bump buffer pointer
+        buf = (void *) (((uint16 *) buf) + nw);         // bump buffer pointer
+                                                        // Note: ((uint16 *) buf) += nw is no longer
+                                                        // kosher C.
     }
 }
 
@@ -765,7 +787,7 @@ void print_slet (void)
 int ebcdic_to_ascii (int ch)
 {
     int j;
-    static int ascii_to_ebcdic_table[128] = {
+    static const int ascii_to_ebcdic_table[128] = {
     //
         0x00,0x01,0x02,0x03,0x37,0x2d,0x2e,0x2f, 0x16,0x05,0x25,0x0b,0x0c,0x0d,0x0e,0x0f,
     //
@@ -795,15 +817,15 @@ int ebcdic_to_ascii (int ch)
 // convert_namecode - convert two-word name code into 5 character ASCII name
 // -------------------------------------------------------------------------------------------
 
-void convert_namecode (uint16 *namecode, char *name)
+void convert_namecode (const uint16 *namecode, char *name)
 {
     unsigned long val;
-    int i, ch;
+    int i;
 
     val = (namecode[0] << 16) | namecode[1];    // reconstruct the 30-bit code
 
     for (i = 0; i < 5; i++) {                   // scan for 5 letters
-        ch = ((val >> 24) & 0x3F);              // pick up 6 bits at leftmost character position
+        int ch = ((val >> 24) & 0x3F);          // pick up 6 bits at leftmost character position
         if (ch == 0)
             ch = ' ';                           // zero is a space
         else
@@ -826,12 +848,15 @@ void convert_namecode (uint16 *namecode, char *name)
 
 void get_let (LETENTRY **listhead, uint16 secno)
 {
-    uint16 seq, sec_addr, avail, chain, namecode[2], dbcount, addr;
-    int i, nwords, filetype;
+    uint16 chain, addr = 0;
+    int i, filetype;
     char name[6];
     LETENTRY *head = NULL, *tail, *entry, *master = NULL;
 
     for (; secno != 0; secno = chain) { // scan through linked sectors
+        uint16 seq, sec_addr, avail, namecode[2];
+        int nwords;
+
         getsec(secno);
 
         seq      = sector.data[0];      // relative sector number
@@ -848,6 +873,8 @@ void get_let (LETENTRY **listhead, uint16 secno)
         nwords = SEC_WORDS - 5 - avail; // number of words used by F/LET entries in this sector
 
         for (i = 5; nwords >= 3; ) {    // scan through entries
+            uint16 dbcount;
+
             filetype = (sector.data[i] >> 14) & 0x03;       // get file type: 0=DSF, 2=DCI, 3=data
 
             namecode[0] = sector.data[i] & 0x3FFF;          // get name
@@ -860,7 +887,7 @@ void get_let (LETENTRY **listhead, uint16 secno)
             nwords -= 3;
 
             entry = ALLOCATE(LETENTRY);
-            strcpy(entry->name, name);
+            util_strcpy(entry->name, arraysize(entry->name), name);
             entry->next     = NULL;
             entry->filetype = filetype;
             entry->dbaddr   = addr;
@@ -892,12 +919,11 @@ void get_let (LETENTRY **listhead, uint16 secno)
 // print_let - list FLET or LET
 // -------------------------------------------------------------------------------------------
 
-void print_let (char *title, LETENTRY *entry)
+void print_let (const char *title, LETENTRY *entry)
 {
-    int nblocks, nfiles, nalternates, nfree;                    // used to get total files, blocks in a directory
-    static char *ftname[4] = {"DSF", "???", "DCI", "DDF"};      // filetype names
+    int nblocks, nfiles, nalternates, nfree;                     // used to get total files, blocks in a directory
 
-    nfiles      = 0;                                            // reset total counts
+    nfiles      = 0;                                             // reset total counts
     nblocks     = 0;
     nalternates = 0;
     nfree       = 0;
@@ -907,31 +933,31 @@ void print_let (char *title, LETENTRY *entry)
     printf("----- ----  ------%s\n", show_all ? " ---- --------------------------------------" : "");
 
     for (; entry != NULL; entry = entry->next) {
-        if (entry->dummy) {                                     // this is an unused LET/FLET slot
+        if (entry->dummy) {                                      // this is an unused LET/FLET slot
             if (entry->next == NULL) {
-                nfree = entry->dbcount;                         // last 1DUMY gives amount of free space
+                nfree = entry->dbcount;                          // last 1DUMY gives amount of free space
             }
             else {
-                nblocks += entry-> dbcount;                     // in middle, it's a bit of space lost due to sector-padding
+                nblocks += entry-> dbcount;                      // in middle, it's a bit of space lost due to sector-padding
 
-                if (show_all)           {                       // display padding entries in show_all mode
+                if (show_all)           {                        // display padding entries in show_all mode
                     printf("%-5s %-3s ", "(pad)", "");
                     commas(entry->dbcount, 8);
                     printf("  %04x\n", entry->dbaddr);
                 }
             }
         }
-        else if (entry->dbcount > 0) {                          // if disk block count is nonzero, it's a file
+        else if (entry->dbcount > 0) {                           // if disk block count is nonzero, it's a file
             printf("%-5s %-3s", entry->name, ftname[entry->filetype]);
             commas(entry->dbcount, 8);
             if (show_all)
                 printf("  %04x %s", entry->dbaddr, file_progtype(entry));
             putchar('\n');
 
-            nblocks += entry->dbcount;                          // add to cumulative totals
+            nblocks += entry->dbcount;                           // add to cumulative totals
             nfiles++;
         }
-        else {                                                  // 0 blocks means it's an alternate entry for previous file
+        else {                                                   // 0 blocks means it's an alternate entry for previous file
             if (show_all)
                 printf("%-5s\n", entry->name);
 
@@ -939,9 +965,9 @@ void print_let (char *title, LETENTRY *entry)
         }
     }
 
-    putchar('\n');                                              // double space after table
+    putchar('\n');                                               // double space after table
 
-    printf("\nTotal: ");                                        // print summary
+    printf("\nTotal: ");                                         // print summary
     commas(nfiles, 0);
     printf(" file%s", (nfiles == 1) ? "" : "s");
     if (show_all) {
@@ -968,12 +994,13 @@ void print_let (char *title, LETENTRY *entry)
 // astring - allocate memory for an return copy of a string
 // -------------------------------------------------------------------------------------------
 
-char *astring (char *str)
+char *astring (const char *str)
 {
     char *cpy;
+    size_t cpy_len = strlen(str) + 1;
 
-    cpy = malloc(strlen(str)+1);
-    strcpy(cpy, str);
+    cpy = malloc(cpy_len);
+    util_strcpy(cpy, cpy_len, str);
     
     return cpy;
 }
@@ -1036,12 +1063,13 @@ NAMELIST free_nodes = NULL;
 // add_list - add a name to a linked list of names, in alphabetical order
 // -------------------------------------------------------------------------------------------
 
-void add_list (char *name, NAMELIST *plisthead)
+void add_list (const char *name, NAMELIST *plisthead)
 {
     NAMELIST n, prev;
-    int cmp;
 
     for (n = *plisthead, prev = NULL; n != NULL; prev = n, n = n->next) {       // scan list. 'Prev' is trailing pointer
+        int cmp;
+
         if ((cmp = strcmp(n->name, name)) == 0)
             return;                                                 // name is already in the list
 
@@ -1056,7 +1084,7 @@ void add_list (char *name, NAMELIST *plisthead)
         free_nodes = n->next;
     }
 
-    strcpy(n->name, name);                                          // save the name
+    util_strcpy(n->name, arraysize(n->name), name);                 // save the name
 
     if (prev == NULL) {                                             // add to head of list
         n->next = *plisthead;
@@ -1072,7 +1100,7 @@ void add_list (char *name, NAMELIST *plisthead)
 // print_list - print list of names
 // -------------------------------------------------------------------------------------------
 
-void print_list (NAMELIST list, char *title)
+void print_list (NAMELIST list, const char *title)
 {
     int i;
 
@@ -1123,7 +1151,7 @@ typedef struct {
     uint16      datablock[9];           // current data block; datablock[ind] is next word
 } DSFSTREAM;
 
-void init_dsf_stream (DSFSTREAM *dsf_stream, LETENTRY *entry, DSF_PROGRAM_HEADER *hdr)
+void init_dsf_stream (DSFSTREAM *dsf_stream, const LETENTRY *entry, const DSF_PROGRAM_HEADER *hdr)
 {
     dsf_stream->dbaddr = entry->dbaddr;     // set up dbaddr and offset for data in chosen file
     dsf_stream->offset = hdr->hdr_len9 + 9; // point just past the file header (hdr_len9 is the length - 9)
@@ -1140,7 +1168,6 @@ void init_dsf_stream (DSFSTREAM *dsf_stream, LETENTRY *entry, DSF_PROGRAM_HEADER
 BOOL get_dsf_word (DSFSTREAM *dsf_stream, uint16 *word, uint16 *addr, uint16 *relflag)
 {
     uint16 dataheader[2];
-    int i;
 
     if (dsf_stream->ind >= dsf_stream->nw) {            // we've exhausted the current data block, get next one
         if (dsf_stream->nwords == 0) {                  // we've exhausted the current module, get next one
@@ -1167,8 +1194,10 @@ BOOL get_dsf_word (DSFSTREAM *dsf_stream, uint16 *word, uint16 *addr, uint16 *re
         dsf_stream->ind     = 1;                        // initialize index
 
         if (verbose) {                                  // in verbose mode, show data block including relocation bits
-            static char flagchar[4] = {'.', 'r', 'L', 'C'};     // (show . r L or C for abs, rel, LIBF or CALL)
+                                                        // (show . r L or C for abs, rel, LIBF or CALL)
+            static const char flagchar[4] = {'.', 'r', 'L', 'C'};
             char flagstr[10];
+            int i;
 
             for (i = 1; i < dsf_stream->nw; i++)                // construct string showing meaning of relocation bits
                 flagstr[i-1] = flagchar[(dsf_stream->relflag >> (16-2*i)) & 3];
@@ -1188,16 +1217,18 @@ BOOL get_dsf_word (DSFSTREAM *dsf_stream, uint16 *word, uint16 *addr, uint16 *re
     *addr = dsf_stream->addr;                           // give caller the word's address, and increment address
     if (*relflag != 2)                                  // unless relflag was 2 (LIBF), which occupies only 1 word
         dsf_stream->addr++;                             // in core. We'll increment addr when we fetch the 2nd name word
+
+    return TRUE;
 }
 
 // -------------------------------------------------------------------------------------------
 // print_dsf_info - print information about a Disk System Format file
 // -------------------------------------------------------------------------------------------
 
-void print_dsf_info (LETENTRY *entry)
+void print_dsf_info (const LETENTRY *entry)
 {
     DSF_PROGRAM_HEADER hdr;
-    char name[6], *nm, label[4];
+    char name[6], label[4];
     int i, nentries;
     unsigned subtype, progtype, int_precis, real_precis, n_defined_files, fortran_indicator;
     uint16 namewords[2], word, addr, relflag;
@@ -1218,9 +1249,9 @@ void print_dsf_info (LETENTRY *entry)
 //  if (hdr.zero2 != 0)                                                 // so is this word, but it turns out not to be reliably zero
 //      printf(INDENT "CORRUPT:      hdr word 7 should be 0, is %d\n", hdr.zero2);
 
-    printf(INDENT "Program type: %d=%s\n", progtype, progtype_nm[progtype]);    
+    printf(INDENT "Program type: %u=%s\n", progtype, progtype_nm[progtype]);    
     if (progtype == 3 || progtype == 4 || progtype == 5 || progtype == 7) {
-        nm = "Undefined";                                               // types 3, 4, 5 and 7 should have a subtype
+        const char *nm = "Undefined";                                   // types 3, 4, 5 and 7 should have a subtype
         for (i = 0; i < N_SUBTYPE_NMS; i++) {
             if (subtype_nm[i].progtype == progtype && subtype_nm[i].subtype == subtype) {
                 nm = subtype_nm[i].descr;
@@ -1228,7 +1259,7 @@ void print_dsf_info (LETENTRY *entry)
             }
         }
         if (nm != NULL)                                                 // print subtype unless name was defined as NULL
-            printf(INDENT "Subtype:      %d=%s\n", subtype, nm);
+            printf(INDENT "Subtype:      %u=%s\n", subtype, nm);
     }
                                                                         // print fortran information
     printf(INDENT "Precision:    Real=%s Integer=%s\n",
@@ -1236,7 +1267,7 @@ void print_dsf_info (LETENTRY *entry)
         (int_precis  == 0) ? "Unspecified" : (int_precis  == 8) ? "Matches Real" : (int_precis  == 9) ? "One word" : "invalid");
     printf(INDENT "Prog length:  %d wd\n", hdr.proglen); 
     printf(INDENT "COMMON:       %d wd\n", hdr.commonlen);
-    printf(INDENT "Fortran ind:  0x%02x, %d defined file%s\n",
+    printf(INDENT "Fortran ind:  0x%02x, %u defined file%s\n",
         fortran_indicator, n_defined_files, (n_defined_files == 1) ? "" : "s");
 
     switch (progtype) {                                                 // print entry information for...
@@ -1251,7 +1282,7 @@ void print_dsf_info (LETENTRY *entry)
 
             for (i = 0; i < nentries; i++) {                            // list entry point names and addresses
                 convert_namecode(hdr.x.entry[i].name, name);
-                sprintf(label, (i < 9) ? "%d: " : "%d:", i+1);          // print, e.g. "2: " or "12:"
+                util_sprintf(label, arraysize(label), (i < 9) ? "%d: " : "%d:", i+1); // print, e.g. "2: " or "12:"
                 printf(INDENT "Entry %s     %-5s addr /%04x\n", label, name, hdr.x.entry[i].addr);
             }
             break;
@@ -1310,7 +1341,7 @@ void print_dsf_info (LETENTRY *entry)
                 else if (relflag == 1)                          // 1101 - DSN
                     add_list(name, &dsn_list);                  // add name to list of data source names
                 else                                            // 1110 or 1111 - invalid
-                    printf(INDENT, "CORRUPT: object data contains invalid relocation bits 111%d\n", relflag & 1);
+                    printf(INDENT "CORRUPT: object data contains invalid relocation bits 111%d\n", relflag & 1);
                 break;
         }
     }
@@ -1332,10 +1363,10 @@ void print_dsf_info (LETENTRY *entry)
 // print_dci_info - print information about a Disk Core Image file
 // -------------------------------------------------------------------------------------------
 
-void print_dci_info (LETENTRY *entry)
+void print_dci_info (const LETENTRY *entry)
 {
     DCI_PROGRAM_HEADER hdr;
-    char *diskprog;
+    const char *diskprog;
     int i;
 
     getdata(&hdr, entry->dbaddr, 0, sizeof(DCI_PROGRAM_HEADER)/2);          // read file header
@@ -1392,13 +1423,15 @@ void print_ddf_info (LETENTRY *entry)
 // dumpfile - print file contents in hex
 // -------------------------------------------------------------------------------------------
 
-void dumpfile (LETENTRY *entry)
+void dumpfile (const LETENTRY *entry)
 {
-    uint16 offset = 0, nw, nwords, buf[8], i;
+    uint16 offset = 0, nwords, buf[8], i;
 
     nwords = entry->dbcount*BLK_WORDS;                  // number of words to dump
 
     while (nwords > 0) {
+        uint16 nw;
+
         printf("   %04x |", offset);                    // print current offset
 
         nw = min(nwords, 8);                            // fetch (up to) 8 words of data
@@ -1457,7 +1490,7 @@ void print_onefile (LETENTRY *entry, BOOL in_flet)
 // list_named_files - print info for file(s) matching a filename specified on the command line
 // -------------------------------------------------------------------------------------------
 
-void list_named_files (char *name, char *image)
+void list_named_files (char *name, const char *image)
 {
     BOOL has_wild = strchr(name, '?') != NULL || strchr(name, '*') != NULL;
     BOOL in_flet, matched;
@@ -1500,13 +1533,11 @@ void list_named_files (char *name, char *image)
         printf("%s: no such file in %s", name, image);
 }
 
-char * file_progtype (LETENTRY *entry)                  // description of module type
+char * file_progtype (const LETENTRY *entry)        // description of module type
 {
     static char buf[100];
     DSF_PROGRAM_HEADER hdr;
-    char *nm;
     unsigned subtype, progtype;
-    int i;
 
     *buf = '\0';
 
@@ -1516,9 +1547,11 @@ char * file_progtype (LETENTRY *entry)                  // description of module
             subtype           = (hdr.type >> 12) & 0x0F;                        // extract file type and subtype
             progtype          = (hdr.type >>  8) & 0x0F;
 
-            strcpy(buf, progtype_nm[progtype]); 
+            util_strcpy(buf, arraysize(buf), progtype_nm[progtype]); 
             if (progtype == 3 || progtype == 4 || progtype == 5 || progtype == 7) {
-                nm = NULL;
+                const char *nm = NULL;
+                int i;
+
                 for (i = 0; i < N_SUBTYPE_NMS; i++) {
                     if (subtype_nm[i].progtype == progtype && subtype_nm[i].subtype == subtype) {
                         nm = subtype_nm[i].descr;
@@ -1526,8 +1559,8 @@ char * file_progtype (LETENTRY *entry)                  // description of module
                     }
                 }
                 if (nm != NULL) {
-                    strcat(buf, "; ");
-                    strcat(buf, nm);
+                    util_strcat(buf, arraysize(buf), "; ");
+                    util_strcat(buf, arraysize(buf), nm);
                 }
             }
             break;

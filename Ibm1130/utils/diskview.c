@@ -77,7 +77,8 @@ char *trim (char *s);
 
 int main (int argc, char **argv)
 {
-    char *fname = NULL, *arg;
+    const char *fname = NULL;
+    char *arg;
     static char usestr[] = "Usage: diskview [-v] filename";
     int i;
 
@@ -106,7 +107,7 @@ int main (int argc, char **argv)
     if (fname == NULL)
         bail(usestr);
 
-    if ((fp = fopen(fname, "rb")) == NULL) {
+    if ((fp = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         return 2;
     }
@@ -198,9 +199,9 @@ void dump (int nwords)
     putchar('\n');
 }
 
-void showmajor (char *label)
+void showmajor (const char *label)
 {
-    int i;
+    size_t i;
 
     printf("\n--- %s ", label);
 
@@ -211,12 +212,12 @@ void showmajor (char *label)
     putchar('\n');
 }
 
-void name (char *label)
+void name (const char *label)
 {
     printf("%-32.32s ", label);
 }
 
-void pbf (char *label, WORD *buf, int nwords)
+void pbf (char *label, const WORD *buf, int nwords)
 {
     int i, nout;
 
@@ -360,7 +361,7 @@ void dump_dcom (void)
     getsector(1, dcom);
 
     for (d = dcominfo; d->nm != NULL; d++) {
-        sprintf(txt, "%-4.4s %s", d->nm, d->descr);
+        util_sprintf(txt, arraysize(txt), "%-4.4s %s", d->nm, d->descr);
         pbf(txt, dcom+d->offset, 1);
     }
 }
@@ -409,8 +410,9 @@ struct {
 
 void dump_slet (void)
 {
-    int i, j, iphase, nsecs, sec, max_sec = 0;
-    char sstr[16], *smark;
+    int i, j, max_sec = 0;
+    char sstr[16];
+    const char *smark;
 
     showmajor("Sectors 3-5 - SLET");
     for (i = 0; i < 3; i++) {
@@ -421,6 +423,8 @@ void dump_slet (void)
     printf("#   PHID      Addr  Len Sector        Secs\n");
     printf("------------------------------------------\n");
     for (i = 0; i < SLETLEN; i++) {
+        int sec, nsecs, iphase;
+
         if (slet[i].phid == 0)
             break;
 
@@ -439,7 +443,7 @@ void dump_slet (void)
             if (sletinfo[j].pfrom <= iphase && sletinfo[j].pto >= iphase)
                 break;
 
-        sprintf(sstr, "(%d.%d)", sec / DSK_SECCYL, slet[i].sector % DSK_SECCYL);
+        util_sprintf(sstr, arraysize(sstr), "(%d.%d)", sec / DSK_SECCYL, slet[i].sector % DSK_SECCYL);
 
         printf("%3d %04x %4d %04x %04x %04x %s %-7s %3x",
             i, slet[i].phid, iphase, slet[i].addr, slet[i].nwords, slet[i].sector, smark, sstr, nsecs);
@@ -524,7 +528,7 @@ BOOL mget (int offset, char *name)
         return FALSE;
 
     getsector(dcom[offset], buf);
-    sprintf(title, "Sector %x - %s", dcom[offset], name);
+    util_sprintf(title, arraysize(title), "Sector %x - %s", dcom[offset], name);
     showmajor(title);
     return TRUE;
 }
@@ -571,7 +575,7 @@ void bail (char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    fprintf(stderr, fmt, args);
+    vfprintf(stderr, fmt, args);
     va_end(args);
     putchar('\n');
 

@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #ifdef _WIN32
 #  include <windows.h>
 #  include <io.h>
@@ -58,15 +59,15 @@ unsigned short card[80], buf[54];
 
 // bindump - dump a binary (card format) deck to verify sbrks, etc
 
-void  bail        (char *msg);
-void  dump        (char *fname);
-void  dump_data   (char *fname);
-void  dump_phids  (char *fname);
-char *getname     (unsigned short *ptr);
+void  bail        (const char *msg);
+void  dump        (const char *fname);
+void  dump_data   (const char *fname);
+void  dump_phids  (const char *fname);
+char *getname     (const unsigned short *ptr);
 char *getseq      (void);
 int   hollerith_to_ascii (unsigned short h);
-void  process     (char *fname);
-void  show_raw    (char *name);
+void  process     (const char *fname);
+void  show_raw    (const char *name);
 void  show_data   (void);
 void  show_core   (void);
 void  show_endc   (void);
@@ -76,18 +77,18 @@ void  show_sub    (void);
 void  show_ils    (void);
 void  show_iss    (void);
 void  show_end    (void);
-void  sort_phases (char *fname);
+void  sort_phases (const char *fname);
 void  trim        (char *s);
-void  unpack      (unsigned short *icard, unsigned short *obuf, int nwords);
-void  pack        (unsigned short *ocard, unsigned short *ibuf);
-void  verify_checksum(unsigned short *buf);
-int   type_of_card(unsigned short *buf, PACKMODE packed);
+void  unpack      (const unsigned short *icard, unsigned short *obuf, int nwords);
+void  pack        (unsigned short *ocard, const unsigned short *ibuf);
+void  verify_checksum(const unsigned short *buf);
+int   type_of_card(const unsigned short *buf, PACKMODE packed);
 char *card_type_name (unsigned short cardtype);
 
 int main (int argc, char **argv)
 {
     char *arg;
-    static char usestr[] = "Usage: bindump [-psv] filename...";
+    static const char usestr[] = "Usage: bindump [-psv] filename...";
     int i;
 
     for (i = 1; i < argc; i++) {
@@ -121,12 +122,12 @@ int main (int argc, char **argv)
     return 0;
 }
 
-void process (char *nm)
+void process (const char *nm)
 {
 #ifdef _WIN32
     WIN32_FIND_DATA fd;
     HANDLE hFind;
-    char *c, buf[256];
+    char *c;
 
     if (strchr(nm, '*') == NULL && strchr(nm, '?') == NULL)
         dump(nm);
@@ -135,7 +136,7 @@ void process (char *nm)
         fprintf(stderr, "No files matching '%s'\n", nm);
 
     else {
-        if ((c = strrchr(nm, '\\')) == NULL)
+        if ((c = strrchr(nm, '\\')) == NULL && (c = strrchr(nm, '/')) == NULL)
             c = strrchr(nm, ':');
 
         do {
@@ -145,9 +146,11 @@ void process (char *nm)
             if (c == NULL)
                 dump(fd.cFileName);
             else {
-                strcpy(buf, nm);
-                strcpy(buf + (c-nm+1), fd.cFileName);
-                dump(buf);
+                char namebuf[256];
+
+                util_strcpy(namebuf, arraysize(namebuf), nm);
+                util_strcpy(namebuf + (c - nm + 1), arraysize(namebuf) - (c - nm + 1), fd.cFileName);
+                dump(namebuf);
             }
                         
         } while (FindNextFile(hFind, &fd));
@@ -159,7 +162,7 @@ void process (char *nm)
 #endif
 }
 
-void dump (char *fname)
+void dump (const char *fname)
 {
     if (sort)
         sort_phases(fname);
@@ -183,14 +186,14 @@ int cardcomp (const void *a, const void *b)
     return diff ? diff : (((struct tag_card *) a)->seq - ((struct tag_card *) b)->seq);
 }
 
-void sort_phases (char *fname)
+void sort_phases (const char *fname)
 {
-    int i, ncards, cardtype, len, seq = 0, phid;
+    int i, ncards, cardtype, len, seq = 0, phaseid;
     struct tag_card *deck;
     FILE *fd;
     BOOL saw_sbrk = TRUE;
 
-    if ((fd = fopen(fname, "rb")) == NULL) {
+    if ((fd = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         return;
     }
@@ -200,7 +203,7 @@ void sort_phases (char *fname)
     fseek(fd, 0, SEEK_SET);
 
     if (len <= 0 || (len % 160) != 0) {
-        fprintf(stderr, "%s is not a binard deck image\n");
+        fprintf(stderr, "%s is not a binard deck image\n", fname);
         fclose(fd);
         return;
     }
@@ -208,28 +211,28 @@ void sort_phases (char *fname)
     ncards = len / 160;
 
     if (ncards <= 0) {
-        fprintf(stderr, "%s: can't sort, empty deck\n");
+        fprintf(stderr, "%s: can't sort, empty deck\n", fname);
         fclose(fd);
         return;
     }
 
     if ((deck = (struct tag_card *) malloc(ncards*sizeof(struct tag_card))) == NULL) {
-        fprintf(stderr, "%s: can't sort, insufficient memory\n");
+        fprintf(stderr, "%s: can't sort, insufficient memory\n", fname);
         fclose(fd);
         return;
     }
 
-    phid = 0;
+    phaseid = 0;
     for (i = 0; i < ncards; i++) {
         if (fxread(deck[i].card, sizeof(card[0]), 80, fd) != 80) {
             free(deck);
-            fprintf(stderr, "%s: error reading deck\n");
+            fprintf(stderr, "%s: error reading deck\n", fname);
             fclose(fd);
             return;
         }
 
         deck[i].seq  = seq++;                       // store current sequence
-        deck[i].phid = phid;                        // store current phase ID
+        deck[i].phid = phaseid;                     // store current phase ID
 
         cardtype = type_of_card(deck[i].card, PACKED);
 
@@ -243,12 +246,12 @@ void sort_phases (char *fname)
                     unpack(deck[i].card, buf, 0);
                     verify_checksum(buf);
 
-                    phid = (int) (signed short) buf[10];
-                    if (phid < 0)
-                        phid = -phid;
+                    phaseid = (int) (signed short) buf[10];
+                    if (phaseid < 0)
+                        phaseid = -phaseid;
 
-                    deck[i].phid   = phid;                  // this belongs to the new phase
-                    deck[i-1].phid = phid;                  // as does previous card (START or SBRK card)
+                    deck[i].phid   = phaseid;               // this belongs to the new phase
+                    deck[i-1].phid = phaseid;               // as does previous card (START or SBRK card)
                     saw_sbrk = FALSE;
                 }
                 break;
@@ -257,7 +260,7 @@ void sort_phases (char *fname)
                 break;
 
             default:
-                fprintf(stderr, "%s is a %s deck, can't sort\n", card_type_name(cardtype));
+                fprintf(stderr, "%s is a %s deck, can't sort\n", fname, card_type_name(cardtype));
                 free(deck);
                 fclose(fd);
                 return;
@@ -287,14 +290,13 @@ void sort_phases (char *fname)
     free(deck);
 }
 
-void dump_phids (char *fname)
+void dump_phids (const char *fname)
 {
     FILE *fp;
     BOOL saw_sbrk = FALSE, neg;
-    unsigned short cardtype;
     short id;
 
-    if ((fp = fopen(fname, "rb")) == NULL) {
+    if ((fp = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         return;
     }
@@ -302,7 +304,7 @@ void dump_phids (char *fname)
     printf("\n%s:\n", fname);
 
     while (fxread(card, sizeof(card[0]), 80, fp) > 0) {
-        cardtype = type_of_card(card, PACKED);
+        unsigned short cardtype = type_of_card(card, PACKED);
 
         if (saw_sbrk && cardtype != CARDTYPE_DATA) {
             printf("DECK STRUCTURE ERROR: ABS/SBRK card was followed by %s, not DATA", card_type_name(cardtype));
@@ -347,15 +349,14 @@ void dump_phids (char *fname)
     fclose(fp);
 }
 
-void dump_data (char *fname)
+void dump_data (const char *fname)
 {
     FILE *fp;
     BOOL first = TRUE;
-    unsigned short cardtype;
     char str[80];
     int i;
 
-    if ((fp = fopen(fname, "rb")) == NULL) {
+    if ((fp = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         return;
     }
@@ -363,6 +364,8 @@ void dump_data (char *fname)
     printf("\n%s:\n", fname);
 
     while (fxread(card, sizeof(card[0]), 80, fp) > 0) {
+        unsigned short cardtype;
+
         unpack(card, buf, 0);
         verify_checksum(buf);
 
@@ -443,7 +446,7 @@ void dump_data (char *fname)
 
 void show_data (void)
 {
-    int i, n, jrel, rflag, nout, ch, reloc;
+    int i, n, jrel, rflag, nout;
     BOOL first = TRUE;
 
     n = buf[2] & 0x00FF;
@@ -454,6 +457,8 @@ void show_data (void)
     nout = 0;
     rflag = buf[jrel++];
     for (i = 0; i < n; i++) {
+        int ch, reloc;
+
         if (nout >= 8) {
             rflag = buf[jrel++];
             if (first) {
@@ -500,7 +505,7 @@ void show_core (void)
     putchar('\n');
 }
 
-void info (int i, char *nm, char type)
+void info (int i, const char *nm, char type)
 {
     if (nm)
         printf("%s ", nm);
@@ -595,7 +600,7 @@ void show_81(void)
 {
 }
 
-void show_raw (char *name)
+void show_raw (const char *name)
 {
     int i;
     printf("*%s", name);
@@ -619,7 +624,7 @@ char * getseq (void)
 }
 
 
-void bail (char *msg)
+void bail (const char *msg)
 {
     fprintf(stderr, "%s\n", msg);
     exit(1);
@@ -627,14 +632,15 @@ void bail (char *msg)
 
 // unpack nwords of data from card image icard into buffer obuf
 
-void unpack (unsigned short *icard, unsigned short *obuf, int nwords)
+void unpack (const unsigned short *icard, unsigned short *obuf, int nwords)
 {
     int i, j;
-    unsigned short wd1, wd2, wd3, wd4;
 
     if (nwords <= 0 || nwords > 54) nwords = 54;        // the default is to unpack all 54 words
 
     for (i = j = 0; i < nwords; i++) {
+        unsigned short wd1, wd2, wd3, wd4;
+
         wd1 = icard[j++];
         wd2 = icard[j++];
         wd3 = icard[j++];
@@ -650,7 +656,7 @@ void unpack (unsigned short *icard, unsigned short *obuf, int nwords)
 
 // pack - pack 54 words of data in ibuf into card image icard
 
-void pack (unsigned short *ocard, unsigned short *ibuf)
+void pack (unsigned short *ocard, const unsigned short *ibuf)
 {
     int i, j;
 
@@ -662,7 +668,7 @@ void pack (unsigned short *ocard, unsigned short *ibuf)
     }
 }
 
-void verify_checksum (unsigned short *obuf)
+void verify_checksum (const unsigned short *obuf)
 {
 //  unsigned short sum;
 
@@ -774,7 +780,7 @@ void trim (char *s)
     nb[1] = '\0';
 }
 
-int ascii_to_ebcdic_table[128] = 
+const int ascii_to_ebcdic_table[128] = 
 {
     0x00,0x01,0x02,0x03,0x37,0x2d,0x2e,0x2f, 0x16,0x05,0x25,0x0b,0x0c,0x0d,0x0e,0x0f,
     0x10,0x11,0x12,0x13,0x3c,0x3d,0x32,0x26, 0x18,0x19,0x3f,0x27,0x1c,0x1d,0x1e,0x1f,
@@ -787,16 +793,16 @@ int ascii_to_ebcdic_table[128] =
     0x97,0x98,0x99,0xa2,0xa3,0xa4,0xa5,0xa6, 0xa7,0xa8,0xa9,0xc0,0x4f,0xd0,0xa1,0x07,
 };
 
-char *getname (unsigned short *ptr)
+char *getname (const unsigned short *ptr)
 {
     static char str[6];
-    int i, j, ch;
+    int i, j;
     long v;
 
     v = (ptr[0] << 16L) | ptr[1];
 
     for (i = 0; i < 5; i++) {
-        ch = ((v >> 24) & 0x3F) | 0xC0;     // recover those lost two bits
+        int ch = ((v >> 24) & 0x3F) | 0xC0;     // recover those lost two bits
         v <<= 6;
 
         str[i] = ' ';
@@ -813,7 +819,7 @@ char *getname (unsigned short *ptr)
     return str;
 }
 
-int type_of_card (unsigned short *buf, PACKMODE packed)
+int type_of_card (const unsigned short *buf, PACKMODE packed)
 {
     unsigned short unp[3];
 

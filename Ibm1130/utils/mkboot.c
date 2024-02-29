@@ -52,15 +52,15 @@
 #include <ctype.h>
 #include "util_io.h"
 
+#if defined(_WIN32)
+#  define strcasecmp  _stricmp
+#  define strncasecmp _strnicmp
+#endif
+
 #ifndef TRUE
     #define BOOL  int
     #define TRUE  1
     #define FALSE 0
-#endif
-
-#ifndef _WIN32
-    int strnicmp (char *a, char *b, int n);
-    int strcmpi (char *a, char *b);
 #endif
 
 #define BETWEEN(v,a,b) (((v) >= (a)) && ((v) <= (b)))
@@ -87,12 +87,12 @@ unsigned short mem[MAXADDR];            // small core!
 
 // mkboot - load a binary object deck into core and dump requested bytes as a boot card
 
-void bail (char *msg);
+void bail (const char *msg);
 void verify_checksum(unsigned short *card);
 char *upcase (char *str);
-void unpack (unsigned short *card, unsigned short *buf);
+void unpack (const unsigned short *card, unsigned short *buf);
 void dump (char *fname);
-void loaddata (char *fname);
+void loaddata (const char *fname);
 void write_1130 (void);
 void write_1800 (void);
 void write_core (void);
@@ -112,7 +112,7 @@ FILE *fout;
 int main (int argc, char **argv)
 {
     char *arg;
-    static char usestr[] = "Usage: mkboot [-v] binfile outfile [1130|1800|core [loaddr [hiaddr [ident]]]]";
+    static const char usestr[] = "Usage: mkboot [-v] binfile outfile [1130|1800|core [loaddr [hiaddr [ident]]]]";
     int i, ano = 0, ok;
 
     for (i = 1; i < argc; i++) {
@@ -120,13 +120,15 @@ int main (int argc, char **argv)
         if (*arg == '-') {
             arg++;
             while (*arg) {
-                switch (*arg++) {
+                switch (*arg) {
                     case 'v':
                         verbose = TRUE;
                         break;
                     default:
+                        fprintf(stderr, "%s: Unrecognized flag %c\n", argv[0], *arg);
                         bail(usestr);
                 }
+                ++arg;
             }
         }
         else {
@@ -142,26 +144,78 @@ int main (int argc, char **argv)
                 case 2:
                     if       (strcmp(arg, "1130")  == 0) mode = B_1130;
                     else if  (strcmp(arg, "1800")  == 0) mode = B_1800;
-                    else if  (strcmpi(arg, "core") == 0) mode = B_CORE;
-                    else bail(usestr);
+                    else if  (strcasecmp(arg, "core") == 0) mode = B_CORE;
+                    else {
+                        fprintf(stderr, "%s: Unrecognized system %s\n", argv[0], arg);
+                        bail(usestr);
+                    }
                     break;
 
                 case 3:
-                    if (strnicmp(arg, "0x", 2) == 0) ok = sscanf(arg+2, "%x", &addr_from);
-                    else if (arg[0] == '/')          ok = sscanf(arg+1, "%x", &addr_from);
-                    else                             ok = sscanf(arg,   "%d", &addr_from);
-                    if (ok != 1) bail(usestr);
+                {
+                    unsigned int val;
+
+                    if (strncasecmp(arg, "0x", 2) == 0) ok = util_sscanf(arg+2, "%x", &val);
+                    else if (arg[0] == '/')             ok = util_sscanf(arg+1, "%x", &val);
+                    else {
+                        int ival;
+
+                        ok = util_sscanf(arg,   "%d", &ival);
+                        if (ival < 0)
+                            ival += 65536;
+
+                        if (ok != 1 || ival > 65535 || ival < 0) {
+                            fprintf(stderr, "%s: Invalid low address %s\n", argv[0], arg);
+                            bail(usestr);
+                        }
+
+                        addr_from = ival;
+                        break;
+                    }
+
+                    if (ok != 1 || val > 0xffff) {
+                        fprintf(stderr, "%s: Invalid low address %s\n", argv[0], arg);
+                        bail(usestr);
+                    }
+
+                    addr_from = (int) val;
                     break;
+                }
 
                 case 4:
-                    if (strnicmp(arg, "0x", 2) == 0) ok = sscanf(arg+2, "%x", &addr_to);
-                    else if (arg[0] == '/')          ok = sscanf(arg+1, "%x", &addr_to);
-                    else                             ok = sscanf(arg,   "%d", &addr_to);
-                    if (ok != 1) bail(usestr);
+                {
+                    unsigned int val;
+
+                    if (strncasecmp(arg, "0x", 2) == 0) ok = util_sscanf(arg+2, "%x", &val);
+                    else if (arg[0] == '/')             ok = util_sscanf(arg+1, "%x", &val);
+                    else {
+                        int ival;
+
+                        ok = util_sscanf(arg, "%d", &ival);
+                        /* You can put in a negative integer, as if it's two's complement, but
+                         * we'll convert it back to a positive number. */
+                        if (ival < 0)
+                            ival += 65536;
+
+                        if (ok != 1 || ival > 65535 || ival < 0 || ival < addr_from) {
+                            fprintf(stderr, "%s: Invalid high address %s\n", argv[0], arg);
+                            bail(usestr);
+                        }
+
+                        addr_to = ival;
+                        break;
+                    }
+                    if (ok != 1 || val > 0xffff || val < (unsigned int) addr_from) {
+                        fprintf(stderr, "%s: Invalid high address %s\n", argv[0], arg);
+                        bail(usestr);
+                    }
+
+                    addr_to = (int) val;
                     break;
+                }
 
                 case 5:
-                    strncpy(cardid, arg, 9);
+                    util_strncpy(cardid, arraysize(cardid), arg, 9);
                     cardid[8] = '\0';
                     upcase(cardid);
                     break;
@@ -176,7 +230,7 @@ int main (int argc, char **argv)
         maxiplcols = (mode == B_1130) ? 80 : 72;
     else {
         while (strlen(cardid) < 8)
-            strcat(cardid, "0");
+            util_strcat(cardid, arraysize(cardid), "0");
         maxiplcols = 72;
     }
 
@@ -195,14 +249,15 @@ int main (int argc, char **argv)
 void write_1130 (void)
 {
     int addr;
-    unsigned short word;
 
-    if ((fout = fopen(outfile, "wb")) == NULL) {
+    if ((fout = util_fopen(outfile, "wb")) == NULL) {
         perror(outfile);
         exit(1);
     }
 
     for (addr = addr_from; addr <= addr_to; addr++) {
+        unsigned short word;
+
         if (outcols >= maxiplcols)
             flushcard();
 
@@ -225,15 +280,14 @@ void write_1130 (void)
 void write_1800 (void)
 {
     int addr;
-    unsigned short word;
 
-    if ((fout = fopen(outfile, "wb")) == NULL) {
+    if ((fout = util_fopen(outfile, "wb")) == NULL) {
         perror(outfile);
         exit(1);
     }
 
     for (addr = addr_from; addr <= addr_to; addr++) {
-        word = mem[addr];
+        unsigned short word = mem[addr];
 
         if (outcols >= maxiplcols)
             flushcard();
@@ -254,7 +308,7 @@ void write_core (void)
 {
     int addr;
 
-    if ((fout = fopen(outfile, "wb")) == NULL) {
+    if ((fout = util_fopen(outfile, "wb")) == NULL) {
         perror(outfile);
         exit(1);
     }
@@ -277,9 +331,6 @@ void write_core (void)
 
 void flushcard (void)
 {
-    int i, hol, ndig;
-    char fmt[20], newdig[20];
-
     if (outcols <= 0)
         return;                         // nothing to flush
 
@@ -290,8 +341,10 @@ void flushcard (void)
     }
 
     if (*cardid) {                      // add label
+        int i, ndig;
+
         for (i = 0; i < 8; i++) {       // write label as specified
-            hol = ascii_to_hollerith(cardid[i] & 0x7F);
+            int hol = ascii_to_hollerith(cardid[i] & 0x7F);
             putc(hol & 0xFF, fout);
             putc((hol >> 8) & 0xFF, fout);
         }
@@ -304,19 +357,22 @@ void flushcard (void)
         i++;                            // index of first digit in trailing sequence
 
         if (ndig > 0) {                     // if any, increment them
-            sprintf(fmt, "%%0%dd", ndig);   // make, e.g. %03d
-            sprintf(newdig, fmt, atoi(cardid+i)+1);
+            char fmt[20], newdig[20];
+
+            util_sprintf(fmt, arraysize(fmt), "%%0%dd", ndig); // make, e.g. %03d
+            util_sprintf(newdig, arraysize(newdig), fmt, atoi(cardid+i)+1);
             newdig[ndig] = '\0';            // clip if necessary
-            strcpy(cardid+i, newdig);       // replace for next card's sequence number
+            util_strcpy(cardid+i, arraysize(cardid) - i, newdig); // replace for next card's sequence number
         }
     }
 
     outcols = 0;
 }
 
-void show_data (unsigned short *buf)
+void show_data (const unsigned short *buf)
 {
-    int i, n, jrel, rflag, nout, ch, reloc;
+    size_t i, n, jrel;
+    int rflag, nout;
 
     n = buf[2] & 0x00FF;
 
@@ -326,6 +382,8 @@ void show_data (unsigned short *buf)
     nout = 0;
     rflag = buf[jrel++];
     for (i = 0; i < n; i++) {
+        int ch, reloc;
+
         if (nout >= 8) {
             rflag = buf[jrel++];
             putchar('\n');
@@ -344,9 +402,9 @@ void show_data (unsigned short *buf)
     putchar('\n');
 }
 
-void loadcard (unsigned short *buf)
+void loadcard (const unsigned short *buf)
 {
-    int addr, n, i;
+    size_t n, i, addr;
     
     addr = buf[0];
     n = buf[2] & 0x00FF;
@@ -356,19 +414,19 @@ void loadcard (unsigned short *buf)
             bail("Program doesn't fit into 4K");
         mem[addr] = buf[9+i];
 
-        load_low  = MIN(addr, load_low);
-        load_high = MAX(addr, load_high);
+        load_low  = MIN((int) addr, load_low);
+        load_high = MAX((int) addr, load_high);
         addr++;
     }
 }
 
-void loaddata (char *fname)
+void loaddata (const char *fname)
 {
     FILE *fp;
     BOOL first = TRUE;
-    unsigned short card[80], buf[54], cardtype;
+    unsigned short card[80], buf[54];
 
-    if ((fp = fopen(fname, "rb")) == NULL) {
+    if ((fp = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         exit(1);
     }
@@ -377,6 +435,8 @@ void loaddata (char *fname)
         printf("\n%s:\n", fname);
 
     while (fxread(card, sizeof(card[0]), 80, fp) > 0) {
+        unsigned short cardtype;
+
         unpack(card, buf);
         verify_checksum(card);
 
@@ -423,18 +483,19 @@ void loaddata (char *fname)
     fclose(fp);
 }
 
-void bail (char *msg)
+void bail (const char *msg)
 {
     fprintf(stderr, "%s\n", msg);
     exit(1);
 }
 
-void unpack (unsigned short *card, unsigned short *buf)
+void unpack (const unsigned short *card, unsigned short *buf)
 {
     int i, j;
-    unsigned short wd1, wd2, wd3, wd4;
 
     for (i = j = 0; i < 54; i += 3, j += 4) {
+        unsigned short wd1, wd2, wd3, wd4;
+
         wd1 = card[j];
         wd2 = card[j+1];
         wd3 = card[j+2];
@@ -653,54 +714,3 @@ char *upcase (char *str)
 
     return str;
 }
-
-#ifndef _WIN32
-
-int strnicmp (char *a, char *b, int n)
-{
-    int ca, cb;
-
-    for (;;) {
-        if (--n < 0)                    // still equal after n characters? quit now
-            return 0;
-
-        if ((ca = *a) == 0)             // get character, stop on null terminator
-            return *b ? -1 : 0;
-
-        if (ca >= 'a' && ca <= 'z')     // fold lowercase to uppercase
-            ca -= 32;
-
-        cb = *b;
-        if (cb >= 'a' && cb <= 'z')
-            cb -= 32;
-
-        if ((ca -= cb) != 0)            // if different, return comparison
-            return ca;
-
-        a++, b++;
-    }
-}
-
-int strcmpi (char *a, char *b)
-{
-    int ca, cb;
-
-    for (;;) {
-        if ((ca = *a) == 0)             // get character, stop on null terminator
-            return *b ? -1 : 0;
-
-        if (ca >= 'a' && ca <= 'z')     // fold lowercase to uppercase
-            ca -= 32;
-
-        cb = *b;
-        if (cb >= 'a' && cb <= 'z')
-            cb -= 32;
-
-        if ((ca -= cb) != 0)            // if different, return comparison
-            return ca;
-
-        a++, b++;
-    }
-}
-
-#endif

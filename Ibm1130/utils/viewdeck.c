@@ -30,13 +30,14 @@ int main (int argc, char **argv)
     char *fname = NULL, line[82], *arg;
     BOOL coldstart = FALSE;
     unsigned short buf[80];
-    int i, lastnb;
+    size_t i;
+    int lastnb;
     static char usestr[] =
         "Usage: viewdeck [-c] deckfile\n"
         "\n"
         "-c: convert cold start card to 16-bit format as a C array initializer\n";
 
-    for (i = 1; i < argc; i++) {                // process command line arguments
+    for (i = 1; i < (size_t) argc; i++) {        // process command line arguments
         arg = argv[i];
 
         if (*arg == '-') {
@@ -60,7 +61,7 @@ int main (int argc, char **argv)
     if (fname == NULL)                          // there must be a name
         bail(usestr);
 
-    if ((fd = fopen(fname, "rb")) == NULL) {
+    if ((fd = util_fopen(fname, "rb")) == NULL) {
         perror(fname);
         return 1;
     }

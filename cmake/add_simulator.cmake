@@ -162,10 +162,13 @@ list(APPEND ADD_SIMULATOR_OPTIONS
 ##   argument to the ctest command line.
 ## PKG_FAMILY: The simulator family to which a simulator belongs. If not specificed,
 ##   defaults to "default_family".
+## TEST_ARGS: Additional arguments to append to the command line after
+##   "RegisterSanityCheck"
 list(APPEND ADD_SIMULATOR_1ARG
     "TEST"
     "LABEL"
     "PKG_FAMILY"
+    "TEST_ARGS"
 )
 
 ## DEFINES: List of extra command line manifest constants ("-D" items)
@@ -281,6 +284,9 @@ function (add_simulator _targ)
 
     ## Simulator-specific tests:
     list(APPEND test_cmd "${_targ}" "RegisterSanityCheck")
+    if (SIMH_TEST_ARGS)
+        list(APPEND test_cmd ${SIMH_TEST_ARGS})
+    endif ()
 
     if (DEFINED SIMH_TEST)
         string(APPEND test_fname ${CMAKE_CURRENT_SOURCE_DIR} "/tests/${SIMH_TEST}_test.ini")

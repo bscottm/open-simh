@@ -46,6 +46,7 @@
 */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include "util_io.h"
 
 #define int32       int
@@ -66,9 +67,10 @@ void util_io_init (void)
 
 size_t fxread (void *bptr, size_t size, size_t count, FILE *fptr)
 {
-    size_t c, j, nelem, nbuf, lcnt, total;
-    int32 i, k;
-    unsigned char *sptr, *dptr;
+    size_t j, nelem, nbuf, lcnt, total;
+    size_t i, k;
+    const unsigned char *sptr;
+    unsigned char *dptr;
 
     if (! end_tested)
         util_io_init();
@@ -91,14 +93,19 @@ size_t fxread (void *bptr, size_t size, size_t count, FILE *fptr)
     total = 0;
     dptr  = bptr;                       /* init output ptr */
 
-    for (i = nbuf; i > 0; i--) {
+    /* Unsigned reverse loop: i maintains the correct array index via the
+     * post-decrement in the condition. */
+    for (i = nbuf + 1; i-- > 0; /* empty */) {
+        size_t c;
+
         if ((c = fread(sim_flip, size, (i == 1) ? lcnt : nelem, fptr)) == 0)
             return total;
 
         total += c;
 
         for (j = 0, sptr = sim_flip; j < c; j++) {
-            for (k = size - 1; k >= 0; k--)
+            /* See note above. */
+            for (k = size; k-- > 0; /* empty */)
                 *(dptr + k) = *sptr++;
 
             dptr += size;
@@ -110,8 +117,8 @@ size_t fxread (void *bptr, size_t size, size_t count, FILE *fptr)
 
 size_t fxwrite (void *bptr, size_t size, size_t count, FILE *fptr)
 {
-    size_t c, j, nelem, nbuf, lcnt, total;
-    int32 i, k;
+    size_t j, nelem, nbuf, lcnt, total;
+    size_t i, k;
     unsigned char *sptr, *dptr;
 
     if (! end_tested)
@@ -135,11 +142,14 @@ size_t fxwrite (void *bptr, size_t size, size_t count, FILE *fptr)
     total = 0;
     sptr  = bptr;                           /* init input ptr */
 
-    for (i = nbuf; i > 0; i--) {
-        c = (i == 1) ? lcnt : nelem;
+    /* Unsigned reverse loop: i maintains the correct array index via the
+     * post-decrement in the condition. */
+    for (i = nbuf + 1; i-- > 0; /* empty */) {
+        size_t c = (i == 1) ? lcnt : nelem;
 
         for (j = 0, dptr = sim_flip; j < c; j++) {
-            for (k = size - 1; k >= 0; k--)
+            /* See note above. */
+            for (k = size; k-- > 0; /* empty */)
                 *(dptr + k) = *sptr++;
 
             dptr += size;
@@ -152,4 +162,22 @@ size_t fxwrite (void *bptr, size_t size, size_t count, FILE *fptr)
     }
 
     return total;
+}
+
+/* Bounds-checked sprintf(). */
+int util_sprintf(char *buf, size_t bufsiz, const char *fmt, ...)
+{
+    int retval;
+
+    va_list args;
+    va_start(args, fmt);
+
+#if !defined(_WIN32)
+    retval = vsnprintf(buf, bufsiz - 1, fmt, args);
+#else
+    retval = vsnprintf_s(buf, bufsiz - 1, _TRUNCATE, fmt, args);
+#endif
+
+    va_end(args);
+    return retval;
 }

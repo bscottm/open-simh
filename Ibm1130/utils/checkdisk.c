@@ -65,7 +65,9 @@ char *lowcase (char *str);
 int main (int argc, char **argv)
 {
     FILE *fp;
-    char *fname = NULL, *arg, *argval;
+    char *arg;
+    const char *fname = NULL;
+    const char *argval;
     int i, j, cyl, sec, pos, asec, retry, nbad = 0, nfixed = 0, nline;
     BOOL fixit = FALSE, dump = FALSE;
     int dsec, nsec = 1;
@@ -90,12 +92,12 @@ int main (int argc, char **argv)
 
                         argval = argv[i++];
                         if (strchr(argval, '.') != NULL) {
-                            if (sscanf(argval, "%d.%d", &cyl, &sec) != 2)
+                            if (util_sscanf(argval, "%d.%d", &cyl, &sec) != 2)
                                 bail(usestr);
 
                             dsec = cyl*(DSK_NUMSF*DSK_NUMSC) + sec;
                         }
-                        else if (sscanf(argval, "%d", &dsec) != 1)
+                        else if (util_sscanf(argval, "%d", &dsec) != 1)
                             bail(usestr);
 
                         if (dsec < 0 || dsec >= (DSK_NUMCY*DSK_NUMSF*DSK_NUMSC))
@@ -108,7 +110,7 @@ int main (int argc, char **argv)
                             bail(usestr);
 
                         argval = argv[i++];
-                        if (sscanf(argval, "%d", &nsec) != 1)
+                        if (util_sscanf(argval, "%d", &nsec) != 1)
                             bail(usestr);
 
                         if (nsec <= 0)
@@ -130,12 +132,12 @@ int main (int argc, char **argv)
     if (fname == NULL)
         bail(usestr);
 
-    if ((fp = fopen(fname, "rb+")) == NULL) {
+    if ((fp = util_fopen(fname, "rb+")) == NULL) {
         perror(fname);
         return 1;
     }
 
-    if (filelength(fileno(fp)) != 2*DSK_SIZE) {
+    if (util_filelength(util_fileno(fp)) != 2*DSK_SIZE) {
         fprintf(stderr, "File is wrong length, expected %d\n", DSK_SIZE);
         bail(baddisk);
     }
