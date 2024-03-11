@@ -2324,7 +2324,7 @@ static void pcr_xio_sense (int modify)
 
 /* report_error - issue detailed report of Windows IO error */
 
-static void report_error (char *msg, DWORD err)
+static void report_error (const char *msg, DWORD err)
 {
     char *lpMessageBuffer = NULL;
         
@@ -2338,8 +2338,10 @@ static void report_error (char *msg, DWORD err)
       0,
       NULL );
 
-    printf("GetOverlappedResult failed, %s, %s\n",
-        msg, lpMessageBuffer);
+    if (lpMessageBuffer != NULL)
+        printf("GetOverlappedResult failed, %s, %s\n", msg, lpMessageBuffer);
+    else
+        printf("GetOverlappedResult failed, %s (No FormatMessage?)\n", msg);
 
     LocalFree(lpMessageBuffer);
 }
