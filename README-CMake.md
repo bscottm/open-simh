@@ -1288,6 +1288,13 @@ add_simulator(simulator_name
     ## in its sim_instr() instruction simulation loop:
     USES_AIO
 
+    ## Arguments to append after "RegisterSanityCheck". These arguments
+    ## appear between "RegisterSanityCheck" and the test script, if
+    ## given, e.g.:
+    ##
+    ##    mysimulator RegisterSanityCheck -r -t path/to/mysim_test.ini
+    TEST_ARGS "-r"
+
     ## Packaging "family" (group) to which the simulator belongs,
     ## for packagers that support grouping (Windows: NSIS .exe,
     ## WIX .msi; macOS)
