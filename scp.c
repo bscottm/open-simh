@@ -4615,7 +4615,7 @@ if (!ap) {                              /* no environment variable found? */
         ap = rbuf;
         }
     else if (!strcmp ("UTIME", gbuf)) {
-        sprintf (rbuf, "%" LL_FMT "d", (LL_TYPE)now);
+        sprintf (rbuf, "%" LL_FMT, (LL_TYPE)now);
         ap = rbuf;
         }
     /* Separate Date/Time info */
@@ -13216,8 +13216,8 @@ uint32 default_haltafter = get_default_env_parameter (dev_name, "SIM_EXPECT_HALT
 if (exp->buf_size) {
     char *bstr = sim_encode_quoted_string (exp->buf, exp->buf_ins);
 
-    fprintf (st, "  Match Buffer Size: %" SIZE_T_FMT "d\n", exp->buf_size);
-    fprintf (st, "  Buffer Insert Offset: %" SIZE_T_FMT "d\n", exp->buf_ins);
+    fprintf (st, "  Match Buffer Size: %" SIZE_T_FMT "\n", exp->buf_size);
+    fprintf (st, "  Buffer Insert Offset: %" SIZE_T_FMT "\n", exp->buf_ins);
     fprintf (st, "  Buffer Contents: %s\n", bstr);
     if (default_haltafter)
         fprintf (st, "  Default HaltAfter: %u %s\n", (unsigned) default_haltafter, sim_vm_interval_units);
@@ -13353,7 +13353,7 @@ for (i=0; i < exp->size; i++) {
                     char *estr = sim_encode_quoted_string (exp->buf, exp->buf_ins);
                     char *mstr = sim_encode_quoted_string (&ep->match[ep->size-exp->buf_ins], exp->buf_ins);
 
-                    sim_debug (exp->dbit, exp->dptr, "Checking String[0:%" SIZE_T_FMT "d]: %s\n", exp->buf_ins, estr);
+                    sim_debug (exp->dbit, exp->dptr, "Checking String[0:%" SIZE_T_FMT "]: %s\n", exp->buf_ins, estr);
                     sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                     free (estr);
                     free (mstr);
@@ -13365,7 +13365,7 @@ for (i=0; i < exp->size; i++) {
                 char *estr = sim_encode_quoted_string (&exp->buf[exp->buf_size-(ep->size-exp->buf_ins)], ep->size-exp->buf_ins);
                 char *mstr = sim_encode_quoted_string (ep->match, ep->size-exp->buf_ins);
 
-                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT "d:%" SIZE_T_FMT "d]: %s\n",
+                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT ":%" SIZE_T_FMT "]: %s\n",
                            exp->buf_size - ep->size - exp->buf_ins, ep->size-exp->buf_ins, estr);
                 sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                 free (estr);
@@ -13380,7 +13380,7 @@ for (i=0; i < exp->size; i++) {
                 char *estr = sim_encode_quoted_string (&exp->buf[exp->buf_ins-ep->size], ep->size);
                 char *mstr = sim_encode_quoted_string (ep->match, ep->size);
 
-                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT "u:%" SIZE_T_FMT "u]: %s\n",
+                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT ":%" SIZE_T_FMT "]: %s\n",
                           exp->buf_ins - ep->size, ep->size, estr);
                 sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                 free (estr);
@@ -13402,7 +13402,7 @@ if (exp->buf_ins == exp->buf_size) {                    /* At end of match buffe
         memmove (exp->buf, &exp->buf[exp->buf_size/2], exp->buf_size-(exp->buf_size/2));
         exp->buf_ins -= exp->buf_size/2;
         exp->buf_data = exp->buf_ins;
-        sim_debug (exp->dbit, exp->dptr, "Buffer Full - sliding the last %" SIZE_T_FMT "d bytes to start of buffer new insert at: %" SIZE_T_FMT "d\n",
+        sim_debug (exp->dbit, exp->dptr, "Buffer Full - sliding the last %" SIZE_T_FMT " bytes to start of buffer new insert at: %" SIZE_T_FMT "\n",
                   exp->buf_size / 2, exp->buf_ins);
         }
     else {
@@ -13493,7 +13493,7 @@ uint32 after = get_default_env_parameter (dev_name, "SIM_SEND_AFTER", delay);
 
 fprintf (st, "%s\n", tmxr_send_line_name (snd));
 if (snd->extoff < snd->insoff) {
-    fprintf (st, "  %" SIZE_T_FMT "d bytes of pending input Data:\n    ", snd->insoff-snd->extoff);
+    fprintf (st, "  %" SIZE_T_FMT " bytes of pending input Data:\n    ", snd->insoff-snd->extoff);
     fprint_buffer_string (st, snd->buffer+snd->extoff, snd->insoff-snd->extoff);
     fprintf (st, "\n");
     }
@@ -13826,7 +13826,7 @@ if (sim_deb_switches & (SWMASK ('T') | SWMASK ('R') | SWMASK ('A'))) {
         sprintf(tim_t, "%02d:%02d:%02d.%03d ", now->tm_hour, now->tm_min, now->tm_sec, (int)(time_now.tv_nsec/1000000));
         }
     if (sim_deb_switches & SWMASK ('A')) {
-        sprintf(tim_t, "%" LL_FMT "d.%03d ", (LL_TYPE)(time_now.tv_sec), (int)(time_now.tv_nsec/1000000));
+        sprintf(tim_t, "%" LL_FMT ".%03d ", (LL_TYPE)(time_now.tv_sec), (int)(time_now.tv_nsec/1000000));
         }
     }
 if (sim_deb_switches & SWMASK ('P')) {
@@ -16127,7 +16127,7 @@ for (i = 0; (dptr = devices[i]) != NULL; i++) {
             }
 
         if (sim_switches & SWMASK ('R'))            /* Debug output */
-            sim_printf ("%5s:%-9.9s %s(rdx=%u, wd=%u, off=%u, dep=%u, strsz=%" SIZE_T_FMT "u, objsz=%" SIZE_T_FMT "u, elesz=%" SIZE_T_FMT "u, rsz=%" SIZE_T_FMT "u, %s %s%s membytes=%" SIZE_T_FMT "u, macro=%s)\n", dptr->name, rptr->name, rptr->macro, 
+            sim_printf ("%5s:%-9.9s %s(rdx=%u, wd=%u, off=%u, dep=%u, strsz=%" SIZE_T_FMT ", objsz=%" SIZE_T_FMT ", elesz=%" SIZE_T_FMT ", rsz=%" SIZE_T_FMT ", %s %s%s membytes=%" SIZE_T_FMT ", macro=%s)\n", dptr->name, rptr->name, rptr->macro, 
                         rptr->radix, rptr->width, rptr->offset, rptr->depth, rptr->stride, rptr->obj_size, rptr->size, rsz, rptr->desc ? rptr->desc : "",
                         (rptr->flags & REG_FIT) ? "REG_FIT" : "", (rptr->flags & REG_VMIO) ? " REG_VMIO" : "",
                         memsize, rptr->macro ? rptr->macro : "");
