@@ -35,6 +35,9 @@
 #include "ibm1130res.h"
 #include "sim_tmxr.h"
 
+#define UNUSED_ARG(arg) ((void) (arg))
+
+
 #define UPDATE_BY_TIMER
 
 #ifdef UPDATE_BY_TIMER
@@ -63,7 +66,7 @@
 
 t_stat console_reset (DEVICE *dptr);
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * Console display - on Windows builds (only) this code displays the 1130 console
  * and toggle switches. It really enhances the experience.
  *
@@ -109,7 +112,7 @@ extern t_bool program_is_loaded;
     void keyboard_selected (int select)       {}
     void disk_ready (int ready)               {}
     void disk_unlocked (int unlocked)         {}
-    void gui_run (int running)                {} 
+    void gui_run (int running)                {}
 
     t_stat console_reset (DEVICE *dptr)                         {return SCPE_OK;}
     long   stuff_cmd (char *cmd)                                {return 0;}
@@ -120,8 +123,21 @@ extern t_bool program_is_loaded;
 
 static HWND hConsoleWindow = NULL;
 
+/* PumpSupport: Pump-to-main thread signaling state that GUI initialization and
+ * resource acquisition has completed, Pump is about to enter the Windows message
+ * loop. */
+typedef struct PumpSupport_s {
+  volatile LONG pump_init_status;
+  CRITICAL_SECTION pump_init_section;
+  CONDITION_VARIABLE pump_cond_var;
+} PumpSupport;
+
+PumpSupport *pumpSupport = NULL;
+
 t_stat console_reset (DEVICE *dptr)
 {
+    UNUSED_ARG(dptr);
+
     if (! sim_gui) {
         SETBIT(console_unit.flags, UNIT_DIS);           /* disable the GUI */
         CLRBIT(console_unit.flags, UNIT_DISPLAY);       /* turn the GUI off */
@@ -184,24 +200,24 @@ void scp_panic (const char *msg)
 #define TXTBOX_WIDTH    195
 #define TXTBOX_HEIGHT    12
 
-static BOOL   class_defined = FALSE;
-static HWND   hConsoleWnd = NULL;
-static HBITMAP hBitmap = NULL;
-static HFONT  hFont = NULL;
-static HFONT  hBtnFont = NULL;
-static HFONT  hTinyFont = NULL;
-static HBRUSH hbLampOut = NULL;
-static HBRUSH hbWhite = NULL;
-static HBRUSH hbBlack = NULL;
-static HBRUSH hbGray  = NULL;
-static HPEN   hSwitchPen = NULL;
-static HPEN   hWhitePen  = NULL;
-static HPEN   hBlackPen  = NULL;
-static HPEN   hLtGreyPen = NULL;
-static HPEN   hGreyPen   = NULL;
-static HPEN   hDkGreyPen = NULL;
-static int    hUpdateTimer = 0;
-static int    hFlashTimer  = 0;
+static BOOL     class_defined = FALSE;
+static HWND     hConsoleWnd = NULL;
+static HBITMAP  hBitmap = NULL;
+static HFONT    hFont = NULL;
+static HFONT    hBtnFont = NULL;
+static HFONT    hTinyFont = NULL;
+static HBRUSH   hbLampOut = NULL;
+static HBRUSH   hbWhite = NULL;
+static HBRUSH   hbBlack = NULL;
+static HBRUSH   hbGray  = NULL;
+static HPEN     hSwitchPen = NULL;
+static HPEN     hWhitePen  = NULL;
+static HPEN     hBlackPen  = NULL;
+static HPEN     hLtGreyPen = NULL;
+static HPEN     hGreyPen   = NULL;
+static HPEN     hDkGreyPen = NULL;
+static UINT_PTR hUpdateTimer = 0;
+static UINT_PTR hFlashTimer  = 0;
 
 static HCURSOR hcArrow = NULL;
 static HCURSOR hcHand  = NULL;
@@ -224,29 +240,30 @@ static struct tag_btn {
     BOOL   subclassed;
 
 } btn[] = {
-    0, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "",                     FALSE,  FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
-    0, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "DISK\nUNLOCK",         FALSE,  TRUE,   RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
-    0, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "RUN",                  FALSE,  FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE,
-    0, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "K B\nSELECT",          FALSE,  FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
+    /* Note: C11 standards-compliant compilers (clang, especially) complain about misssing braces around initializers... */
+    { 0, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "",                     FALSE,  FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
+    { 0, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "DISK\nUNLOCK",         FALSE,  TRUE,   RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
+    { 0, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "RUN",                  FALSE,  FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE },
+    { 0, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "K B\nSELECT",          FALSE,  FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
 
-    1, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "POWER\nON",            FALSE,  TRUE,   RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
-    1, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "FILE\nREADY",          FALSE,  FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE,
-    1, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "PARITY\nCHECK",        FALSE,  FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE,
-    1, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "FORMS\nCHECK",         FALSE,  FALSE,  RGB(255,255,0),     NULL, NULL, NULL,   TRUE,
+    { 1, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "POWER\nON",            FALSE,  TRUE,   RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
+    { 1, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "FILE\nREADY",          FALSE,  FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE },
+    { 1, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "PARITY\nCHECK",        FALSE,  FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE },
+    { 1, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "FORMS\nCHECK",         FALSE,  FALSE,  RGB(255,255,0),     NULL, NULL, NULL,   TRUE },
 
-    2, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "POWER",                TRUE,   FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
-    2, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nSTART",       TRUE,   FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE,
-    2, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nSTOP",        TRUE,   FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE,
-    2, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "LOAD\nIAR",            TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE,
+    { 2, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "POWER",                TRUE,   FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
+    { 2, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nSTART",       TRUE,   FALSE,  RGB(0,255,0),       NULL, NULL, NULL,   TRUE },
+    { 2, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nSTOP",        TRUE,   FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE },
+    { 2, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "LOAD\nIAR",            TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE },
 
-    3, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "KEYBOARD",             TRUE,   FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE,
-    3, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "IMM\nSTOP",            TRUE,   FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE,
-    3, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "RESET",                TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE,
-    3, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nLOAD",        TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE,
+    { 3, 0, BUTTON_WIDTH, BUTTON_HEIGHT,  "KEYBOARD",             TRUE,   FALSE,  RGB(255,255,180),   NULL, NULL, NULL,   TRUE },
+    { 3, 1, BUTTON_WIDTH, BUTTON_HEIGHT,  "IMM\nSTOP",            TRUE,   FALSE,  RGB(255,0,0),       NULL, NULL, NULL,   TRUE },
+    { 3, 2, BUTTON_WIDTH, BUTTON_HEIGHT,  "RESET",                TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE },
+    { 3, 3, BUTTON_WIDTH, BUTTON_HEIGHT,  "PROGRAM\nLOAD",        TRUE,   FALSE,  RGB(0,0,255),       NULL, NULL, NULL,   TRUE },
 
-    TXTBOX_X+40, TXTBOX_Y+25, 35, 12,   "Tear",                 TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE,
-    635, 238, 110, 110,                 "EMPTY_1442",           TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE,
-    635, 366, 110, 110,                 "EMPTY_1132",           TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE,
+    { TXTBOX_X+40, TXTBOX_Y+25, 35, 12,   "Tear",                 TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE },
+    { 635, 238, 110, 110,                 "EMPTY_1442",           TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE },
+    { 635, 366, 110, 110,                 "EMPTY_1132",           TRUE,   FALSE,  0,                  NULL, NULL, NULL,   FALSE },
 };
 #define NBUTTONS (sizeof(btn) / sizeof(btn[0]))
 
@@ -285,10 +302,38 @@ static DWORD WINAPI Pump (LPVOID arg);
 static void accept_dropped_file (HANDLE hDrop);
 static void tear_printer (void);
 
-#define NIXOBJECT(hObj) if (hObj != NULL) {DeleteObject(hObj); hObj = NULL;}
+#define NIXOBJECT(hObj) \
+    do { \
+        if (hObj != NULL) { DeleteObject(hObj); hObj = NULL; } \
+    } while (0)
 
-/* ------------------------------------------------------------------------ 
- * init_console_window - display the 1130 console. Actually just creates a thread 
+/* ------------------------------------------------------------------------
+ * GUIReportError - Outputs GetLastError on stdout.
+ * ------------------------------------------------------------------------ */
+
+static void GUIReportError (const char *msg)
+{
+    char *lpMessageBuffer = NULL;
+
+    FormatMessage(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM,
+      NULL,
+      GetLastError(),
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), /* The user default language */
+      (LPTSTR) &lpMessageBuffer,
+      0,
+      NULL );
+
+    printf("IBM 1130 GUI: %s (%s)\n",
+           (msg != NULL ? msg : "GUIReportError"),
+           (lpMessageBuffer != NULL ? lpMessageBuffer : "No FormatMessage?"));
+
+    LocalFree(lpMessageBuffer);
+}
+
+/* ------------------------------------------------------------------------
+ * init_console_window - display the 1130 console. Actually just creates a thread
  * to run the Pump routine which does the actual work.
  * ------------------------------------------------------------------------ */
 
@@ -299,8 +344,43 @@ static void init_console_window (void)
     if (hConsoleWnd != NULL)
         return;
 
-    if (PumpID == 0)
-        hPump = CreateThread(NULL, 0, Pump, 0, 0, &PumpID);
+    if (pumpSupport == NULL) {
+        pumpSupport = (PumpSupport *) calloc(1, sizeof(PumpSupport));
+        if (pumpSupport == NULL) {
+          scp_panic("Could not allocate pumpSupport! calloc() failed??");
+        }
+
+        InitializeCriticalSection(&pumpSupport->pump_init_section);
+        InitializeConditionVariable(&pumpSupport->pump_cond_var);
+    }
+
+    if (PumpID == 0) {
+        /* Restart the Pump() thread. */
+
+        InterlockedExchange(&pumpSupport->pump_init_status, 0L);
+        EnterCriticalSection(&pumpSupport->pump_init_section);
+
+        hPump = CreateThread(NULL, 0, Pump, pumpSupport, 0, &PumpID);
+
+        /* SleepConditionVariableCS() can return for various reasons other than
+         * broadcast, so loop until pump_init_status is non-zero. */
+        do {
+            SleepConditionVariableCS(&pumpSupport->pump_cond_var, &pumpSupport->pump_init_section, INFINITE);
+        } while (pumpSupport->pump_init_status == 0);
+
+        LeaveCriticalSection(&pumpSupport->pump_init_section);
+
+        if (pumpSupport->pump_init_status < 0) {
+            /* GUI initialization failed, so disable the GUI and ensure the GUI's
+             * display bit is off. */
+            SETBIT(console_unit.flags, UNIT_DIS);           /* disable the GUI */
+            CLRBIT(console_unit.flags, UNIT_DISPLAY);       /* turn the GUI off */
+            sim_gui = FALSE;                                /* ensure it can't be re-enabled. */
+
+            hPump = INVALID_HANDLE_VALUE;
+            PumpID = 0;
+        }
+    }
 
     if (! did_atexit) {
         atexit(destroy_console_window);
@@ -308,53 +388,49 @@ static void init_console_window (void)
     }
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * destroy_console_window - delete GDI objects.
  * ------------------------------------------------------------------------ */
 
 static void destroy_console_window (void)
 {
-    int i;
+    if (hConsoleWnd != NULL) {
+        DWORD wait_status;
 
-    if (hConsoleWnd != NULL)
-        SendMessage(hConsoleWnd, WM_CLOSE, 0, 0);   /* cross thread call is OK */
-
-    if (hPump != INVALID_HANDLE_VALUE) {            /* this is not the most graceful way to do it */
-        TerminateThread(hPump, 0);
-        hPump  = INVALID_HANDLE_VALUE;
-        PumpID = 0;
-        hConsoleWnd = NULL;
-    }
-    if (hCDC != NULL) {
-        DeleteDC(hCDC);
-        hCDC = NULL;
-    }
-
-    NIXOBJECT(hBitmap)
-    NIXOBJECT(hbLampOut)
-    NIXOBJECT(hFont)
-    NIXOBJECT(hBtnFont);
-    NIXOBJECT(hTinyFont);
-    NIXOBJECT(hcHand)
-    NIXOBJECT(hSwitchPen)
-    NIXOBJECT(hLtGreyPen)
-    NIXOBJECT(hGreyPen)
-    NIXOBJECT(hDkGreyPen)
-
-    for (i = 0; i < NBUTTONS; i++) {
-        NIXOBJECT(btn[i].hbrLit);
-        NIXOBJECT(btn[i].hbrDark);
+        /* Post the WM_CLOSE close message so that the Pump message loop sees
+         * it and terminates. Wait for the thread to exit, but don't wait
+         * forever. */
+        PostMessage(hConsoleWnd, WM_CLOSE, 0, 0);
+        wait_status = WaitForSingleObject(hPump, 5000);
+        switch (wait_status) {
+            case WAIT_TIMEOUT:
+                TerminateThread(hPump, 0);
+                /* FALLTHROUGH */
+            case WAIT_OBJECT_0:
+                /* Pump terminated successfully. */
+                hPump = INVALID_HANDLE_VALUE;
+                PumpID = 0;
+                hConsoleWnd = NULL;
+                break;
+            default:
+                GUIReportError("destroy_console_window.WaitForSingleObject");
+                break;
+        }
     }
 
-/*  if (class_defined) {
-        UnregisterClass(hInstance, szConsoleClassName);
-        class_defined = FALSE;
+    if (hPump != INVALID_HANDLE_VALUE) {
+        fputs("destroy_console_window: hPump thread not terminated?\n", stderr);
     }
-*/
+
+    if (pumpSupport != NULL) {
+        DeleteCriticalSection(&pumpSupport->pump_init_section);
+        free(pumpSupport);
+        pumpSupport = NULL;
+    }
 }
 
-/* ------------------------------------------------------------------------ 
- * these variables hold the displayed versions of the system registers 
+/* ------------------------------------------------------------------------
+ * these variables hold the displayed versions of the system registers
  * ------------------------------------------------------------------------ */
 
 static int shown_iar = 0, shown_sar = 0, shown_sbr = 0, shown_afr = 0, shown_acc = 0, shown_ext  = 0;
@@ -362,7 +438,7 @@ static int shown_op  = 0, shown_tag = 0, shown_irq = 0, shown_ccc = 0, shown_cnd
 static int shown_ces = 0, shown_arf = 0, shown_runmode = MODE_RUN;
 static int CND;
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * RedrawRegion - mark a region for redrawing without background erase
  * ------------------------------------------------------------------------ */
 
@@ -378,7 +454,7 @@ static void RedrawRegion (HWND hWnd, int left, int top, int right, int bottom)
     InvalidateRect(hWnd, &r, FALSE);
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * RepaintRegion - mark a region for redrawing with background erase
  * ------------------------------------------------------------------------ */
 
@@ -394,8 +470,8 @@ static void RepaintRegion (HWND hWnd, int left, int top, int right, int bottom)
     InvalidateRect(hWnd, &r, TRUE);
 }
 
-/* ------------------------------------------------------------------------ 
- * update_gui - sees if anything on the console display has changed, and invalidates 
+/* ------------------------------------------------------------------------
+ * update_gui - sees if anything on the console display has changed, and invalidates
  * the changed regions. Then it calls UpdateWindow to force an immediate repaint. This
  * function (update_gui) should probably not be called every time through the main
  * instruction loop but it should be called at least whenever wait_state or int_req change, and then
@@ -404,7 +480,7 @@ static void RepaintRegion (HWND hWnd, int left, int top, int right, int bottom)
  * ------------------------------------------------------------------------ */
 
 void update_gui (BOOL force)
-{   
+{
     int i;
     BOOL state;
     static int in_here = FALSE;
@@ -469,7 +545,7 @@ void update_gui (BOOL force)
             {shown_ext = EXT;        RedrawRegion(hConsoleWnd, 75,  174, 364, 197);}
     if (SBR != shown_sbr)
             {shown_sbr = SBR;        RedrawRegion(hConsoleWnd, 75,   77, 364,  97);}
-    if (OP  != shown_op)                     
+    if (OP  != shown_op)
             {shown_op  = OP;         RedrawRegion(hConsoleWnd, 501,   8, 595,  32);}
     if (TAG != shown_tag)
             {shown_tag = TAG;        RedrawRegion(hConsoleWnd, 501,  77, 595,  97);}
@@ -528,7 +604,7 @@ void update_gui (BOOL force)
 
     state = ((cr_unit.flags & UNIT_ATT) == 0) ? STATE_1442_EMPTY  :
              (cr_unit.flags & UNIT_PHYSICAL)  ? STATE_1442_HIDDEN :
-             (cr_unit.flags & UNIT_CR_EMPTY)  ? STATE_1442_EOF    : 
+             (cr_unit.flags & UNIT_CR_EMPTY)  ? STATE_1442_EOF    :
               cr_unit.pos                     ? STATE_1442_MIDDLE :
                                                 STATE_1442_FULL;
 
@@ -542,7 +618,7 @@ void update_gui (BOOL force)
             SendMessage(btn[IDC_1442].hBtn, STM_SETIMAGE, IMAGE_BITMAP,
                 (LPARAM) (
                     (state == STATE_1442_FULL)   ? hbm1442_full   :
-                    (state == STATE_1442_MIDDLE) ? hbm1442_middle : 
+                    (state == STATE_1442_MIDDLE) ? hbm1442_middle :
                     (state == STATE_1442_EOF)    ? hbm1442_eof    :
                     hbm1442_empty));
         }
@@ -575,12 +651,12 @@ void update_gui (BOOL force)
 
 WNDPROC oldButtonProc = NULL;
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * ------------------------------------------------------------------------ */
 
 LRESULT CALLBACK ButtonProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    int i;
+    LONG_PTR i;
 
     i = GetWindowLongPtr(hWnd, GWLP_ID);
 
@@ -596,7 +672,7 @@ LRESULT CALLBACK ButtonProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     return CallWindowProc(oldButtonProc, hWnd, uMsg, wParam, lParam);
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * ------------------------------------------------------------------------ */
 
 static int occurs (char *txt, char ch)
@@ -610,7 +686,7 @@ static int occurs (char *txt, char ch)
     return count;
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * turns out to get properly colored buttons you have to paint them yourself. Sheesh.
  * On the plus side, this lets do a better job of aligning the button text than
  * the button would by itself.
@@ -712,8 +788,8 @@ void PaintButton (LPDRAWITEMSTRUCT dis)
     SetBkMode(dis->hDC,    oldBk);
     SelectObject(dis->hDC, hOldFont);
 }
-    
-/* ------------------------------------------------------------------------ 
+
+/* ------------------------------------------------------------------------
  * ------------------------------------------------------------------------ */
 
 HWND CreateSubclassedButton (HWND hwParent, UINT_PTR i)
@@ -749,15 +825,54 @@ HWND CreateSubclassedButton (HWND hwParent, UINT_PTR i)
     return hBtn;
 }
 
-/* ------------------------------------------------------------------------ 
- * Pump - thread that takes care of the console window. It has to be a separate thread so that it gets
- * execution time even when the simulator is compute-bound or IO-blocked. This routine creates the window
- * and runs a standard Windows message pump. The window function does the actual display work.
+/* ------------------------------------------------------------------------
+ * Pump - thread that takes care of the console window. It has to be a separate
+ * thread so that it gets execution time even when the simulator is
+ * compute-bound or IO-blocked. This routine creates the window and runs a
+ * standard Windows message pump. The window function does the actual display
+ * work.
+ *
+ * Two support functions:
+ * release_gui_resources: Release and cleanup after destroying the GUI window.
+ * acquire_gui_resources: Acquire the GUI window's resources (bitmaps, icons,
+ *     buttons, etc.) Returns TRUE if successful, FALSE on failure. Failure
+ *     message reported to stderr.
  * ------------------------------------------------------------------------ */
 
-static DWORD WINAPI Pump (LPVOID arg)
+static void release_gui_resources(void)
 {
-    MSG msg;
+    size_t i;
+
+    if (hCDC != NULL) {
+        DeleteDC(hCDC);
+        hCDC = NULL;
+    }
+
+    NIXOBJECT(hBitmap);
+    NIXOBJECT(hbLampOut);
+    NIXOBJECT(hFont);
+    NIXOBJECT(hBtnFont);
+    NIXOBJECT(hTinyFont);
+    NIXOBJECT(hcHand);
+    NIXOBJECT(hSwitchPen);
+    NIXOBJECT(hLtGreyPen);
+    NIXOBJECT(hGreyPen);
+    NIXOBJECT(hDkGreyPen);
+
+    for (i = 0; i < NBUTTONS; i++) {
+        NIXOBJECT(btn[i].hbrLit);
+        NIXOBJECT(btn[i].hbrDark);
+    }
+
+/*  if (class_defined) {
+        UnregisterClass(hInstance, szConsoleClassName);
+        class_defined = FALSE;
+    }
+*/
+}
+
+static int acquire_gui_resources(PumpSupport *psupport)
+{
     int wx, wy;
     UINT_PTR i;
     RECT r, ra;
@@ -765,6 +880,12 @@ static DWORD WINAPI Pump (LPVOID arg)
     WNDCLASS cd;
     HDC hDC;
     HWND hActWnd;
+
+    if (psupport == NULL) {
+        scp_panic("Pump thread received NULL arg.");
+    }
+
+    EnterCriticalSection(&psupport->pump_init_section);
 
     hActWnd = GetForegroundWindow();
 
@@ -784,8 +905,7 @@ static DWORD WINAPI Pump (LPVOID arg)
         cd.lpszClassName = szConsoleClassName;
 
         if (! RegisterClass(&cd)) {
-            PumpID = 0;
-            return 0;
+            goto init_failed;
         }
 
         class_defined = TRUE;
@@ -824,8 +944,7 @@ static DWORD WINAPI Pump (LPVOID arg)
 
     if (hConsoleWnd == NULL) {                      /* create window */
         if ((hConsoleWnd = CreateWindow(szConsoleClassName, "IBM 1130", WS_OVERLAPPED|WS_CLIPCHILDREN, 0, 0, 200, 200, NULL, NULL, hInstance, NULL)) == NULL) {
-            PumpID = 0;
-            return 0;
+            goto init_failed;
         }
 
         DragAcceptFiles(hConsoleWnd, TRUE);         /* let it accept dragged files (scripts) */
@@ -865,7 +984,7 @@ static DWORD WINAPI Pump (LPVOID arg)
             btn[i].x, btn[i].y, btn[i].wx, btn[i].wy, hConsoleWnd, (HMENU) i, hInstance, NULL);
     btn[i].state = STATE_1442_EMPTY;
 
-    wx = SendMessage(btn[i].hBtn, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM) hbm1442_empty);
+    SendMessage(btn[i].hBtn, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM) hbm1442_empty);
 
     i = IDC_1132;
 
@@ -873,7 +992,8 @@ static DWORD WINAPI Pump (LPVOID arg)
             btn[i].x, btn[i].y, btn[i].wx, btn[i].wy, hConsoleWnd, (HMENU) i, hInstance, NULL);
     btn[i].state = FALSE;
 
-    wx = SendMessage(btn[i].hBtn, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM) hbm1132_empty);
+    SendMessage(btn[i].hBtn, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM) hbm1132_empty);
+
 
     GetWindowRect(hConsoleWnd, &r);                 /* get window size as created */
     wx = r.right  - r.left + 1;
@@ -905,25 +1025,51 @@ static DWORD WINAPI Pump (LPVOID arg)
         }
     }
 
+    /* Signal success to waiting main thread... */
+    InterlockedIncrement(&psupport->pump_init_status);
+    LeaveCriticalSection(&psupport->pump_init_section);
+    WakeConditionVariable(&psupport->pump_cond_var);
+    return TRUE;
+
+init_failed:
+    /* Report error, if any. */
+    GUIReportError("acquire_gui_resources");
+    release_gui_resources();
+
+    /* Signal failure. */
+    InterlockedDecrement(&psupport->pump_init_status);
+    LeaveCriticalSection(&psupport->pump_init_section);
+    WakeConditionVariable(&psupport->pump_cond_var);
+    return FALSE;
+}
+
+static DWORD WINAPI Pump (LPVOID arg)
+{
+    MSG msg;
+    BOOL msgRet;
+
+    if (acquire_gui_resources((PumpSupport *) arg) == FALSE) {
+        return FALSE;
+    }
+
     if (running)                                    /* if simulator is already running, start update timer */
         gui_run(TRUE);
 
-    while (GetMessage(&msg, hConsoleWnd, 0, 0)) {   /* message pump - this basically loops forevermore */
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
+    /* Loop until ConsoleWndProc sends WM_CLOSE for a clean exit from the loop. */
+    do {
+        msgRet = GetMessage(&msg, hConsoleWnd, 0, 0);
+        if (msgRet > 0) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        } else if (msgRet == -1) {
+            GUIReportError("Pump message loop");
+        }
+    } while (msgRet > 0 && msg.message != WM_CLOSE);
 
-    if (hConsoleWnd != NULL) { 
-        DragAcceptFiles(hConsoleWnd, FALSE);        /* unregister as drag/drop target */
-        DestroyWindow(hConsoleWnd);                 /* but if a quit message got posted, clean up */
-        hConsoleWnd = NULL;
-    }
-
-    PumpID = 0;
-    return 0;
+    return TRUE;
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * DrawBits - starting at position (x,y), draw lamps for nbits bits of word 'bits', looking only at masked bits
  * ------------------------------------------------------------------------ */
 
@@ -952,7 +1098,7 @@ static void DrawBits (HDC hDC, int x, int y, int bits, int nbits, int mask, char
     }
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * DrawToggles - display the console sense switches
  * ------------------------------------------------------------------------ */
 
@@ -960,6 +1106,8 @@ static void DrawBits (HDC hDC, int x, int y, int bits, int nbits, int mask, char
 static void DrawToggles (HDC hDC, int bits)
 {
     int b, x;
+
+    UNUSED_ARG(bits);
 
     for (b = 0x8000, x = TOGGLES_X; b != 0; b >>= 1) {
         if (shown_ces & b) {            /* up */
@@ -979,7 +1127,7 @@ static void DrawToggles (HDC hDC, int bits)
     }
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * DrawRunmode - draw the run mode rotary switch's little tip
  * ------------------------------------------------------------------------ */
 
@@ -1006,15 +1154,18 @@ void DrawRunmode (HDC hDC, int mode)
     SelectObject(hDC, hOldPen);
 }
 
-/* ------------------------------------------------------------------------ 
- * HandleClick - handle mouse clicks on the console window. Now we just 
+/* ------------------------------------------------------------------------
+ * HandleClick - handle mouse clicks on the console window. Now we just
  * look at the console sense switches.  Actual says this is a real click, rather
  * than a mouse-region test.  Return value TRUE means the cursor is over a hotspot.
  * ------------------------------------------------------------------------ */
 
 static BOOL HandleClick (HWND hWnd, int xh, int yh, BOOL actual, BOOL rightclick)
 {
-    int b, x, r, ang, i;
+    int b, x;
+
+    UNUSED_ARG(hWnd);
+    UNUSED_ARG(rightclick);
 
     for (b = 0x8000, x = TOGGLES_X; b != 0; b >>= 1) {
         if (BETWEEN(xh, x-3, x+8+3) && BETWEEN(yh, 230, 275)) {
@@ -1028,9 +1179,13 @@ static BOOL HandleClick (HWND hWnd, int xh, int yh, BOOL actual, BOOL rightclick
     }
 
     if (BETWEEN(xh, RUNSWITCH_X-50, RUNSWITCH_X+50) && BETWEEN(yh, RUNSWITCH_Y-50, RUNSWITCH_Y+50)) {       /* hit near rotary switch */
+        int r, ang;
+
         ang = (int) (atan2(RUNSWITCH_X-xh, RUNSWITCH_Y-yh)*180./3.1415926); /* this does implicit 90 deg rotation by the way */
         r = (int) sqrt((xh-RUNSWITCH_X)*(xh-RUNSWITCH_X)+(yh-RUNSWITCH_Y)*(yh-RUNSWITCH_Y));
         if (r > 12) {
+            int i;
+
             for (i = MODE_LOAD; i <= MODE_INT_RUN; i++) {
                 if (BETWEEN(ang, i*45-12, i*45+12)) {
                     if (actual) {
@@ -1040,14 +1195,14 @@ static BOOL HandleClick (HWND hWnd, int xh, int yh, BOOL actual, BOOL rightclick
                     return TRUE;
                 }
             }
-            
+
         }
     }
 
     return FALSE;
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * DrawConsole - refresh the console display. (This routine could be sped up by intersecting
  * the various components' bounding rectangles with the repaint rectangle.  The bounding rects
  * could be put into an array and used both here and in the refresh routine).
@@ -1064,11 +1219,10 @@ static void DrawConsole (HDC hDC, PAINTSTRUCT *ps)
     static char waits[]  = " W";
     HFONT hOldFont, hOldBrush;
     RECT xout, xin;
-    int i, n;
-    DEVICE *dptr;
+    int i;
+    const DEVICE *dptr;
     UNIT *uptr;
-    t_bool enab;
-    char nametemp[50], *dispname;
+    char nametemp[50];
 
     hOldFont  = SelectObject(hDC, hFont);           /* use that tiny font */
     hOldBrush = SelectObject(hDC, hbWhite);
@@ -1104,7 +1258,7 @@ static void DrawConsole (HDC hDC, PAINTSTRUCT *ps)
         hOldFont = SelectObject(hDC, hTinyFont);
 
         for (i = 0; i < NTXTBOXES; i++) {
-            enab = FALSE;
+            t_bool enab = FALSE;
 
             dptr = find_unit(txtbox[i].unitname, &uptr);
             if (dptr != NULL && uptr != NULL) {
@@ -1112,23 +1266,26 @@ static void DrawConsole (HDC hDC, PAINTSTRUCT *ps)
                     SetTextColor(hDC, RGB(128,0,0));
                 }
                 else if (uptr->flags & UNIT_ATT) {
+                    size_t nlen;
+                    char *dispname;
+
                     SetTextColor(hDC, RGB(0,0,255));
-                    if ((n = strlen(uptr->filename)) > 30) {
+                    if ((nlen = strlen(uptr->filename)) > 30) {
                         strcpy(nametemp, "...");
-                        strcpy(nametemp+3, uptr->filename+n-30);
-                        dispname = nametemp;                        
+                        strcpy(nametemp+3, uptr->filename+nlen-30);
+                        dispname = nametemp;
                     }
                     else
                         dispname = uptr->filename;
 
-                    TextOut(hDC, txtbox[i].x+25, txtbox[i].y+TXTBOX_HEIGHT, dispname, strlen(dispname));
+                    TextOut(hDC, txtbox[i].x+25, txtbox[i].y+TXTBOX_HEIGHT, dispname, (int) strlen(dispname));
                     SetTextColor(hDC, RGB(255,255,255));
                     enab = TRUE;
                 }
                 else {
                     SetTextColor(hDC, RGB(128,128,128));
                 }
-                TextOut(hDC, txtbox[i].x, txtbox[i].y, txtbox[i].txt, strlen(txtbox[i].txt));
+                TextOut(hDC, txtbox[i].x, txtbox[i].y, txtbox[i].txt, (int) strlen(txtbox[i].txt));
             }
 
             if (txtbox[i].idctrl >= 0)
@@ -1139,12 +1296,12 @@ static void DrawConsole (HDC hDC, PAINTSTRUCT *ps)
     }
 }
 
-/* ------------------------------------------------------------------------ 
- * Handles button presses. Remember that this occurs in the context of 
+/* ------------------------------------------------------------------------
+ * Handles button presses. Remember that this occurs in the context of
  * the Pump thread, not the simulator thread.
  * ------------------------------------------------------------------------ */
 
-void flash_run (void)              
+void flash_run (void)
 {
     EnableWindow(btn[IDC_RUN].hBtn, TRUE);      /* enable the run lamp */
 
@@ -1154,21 +1311,24 @@ void flash_run (void)
     hFlashTimer = SetTimer(hConsoleWnd, FLASH_TIMER_ID, LAMPTIME, NULL);
 }
 
-void gui_run (int running)
+void gui_run (int runflag)
 {
-    if (running && hUpdateTimer == 0 && hConsoleWnd != NULL) {
+    if (runflag && hUpdateTimer == 0 && hConsoleWnd != NULL) {
         hUpdateTimer = SetTimer(hConsoleWnd, UPDATE_TIMER_ID, 1000/UPDATE_INTERVAL, NULL);
     }
-    else if (hUpdateTimer != 0 && ! running) {
+    else if (hUpdateTimer != 0 && ! runflag) {
         KillTimer(hConsoleWnd, UPDATE_TIMER_ID);
         hUpdateTimer = 0;
     }
     flash_run();                                /* keep run lamp active for a while after we stop running */
-} 
+}
 
 void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
 {
     int i;
+
+    UNUSED_ARG(hWnd);
+    UNUSED_ARG(hwCtl);
 
     switch (idCtl) {
         case IDC_POWER:                     /* toggle system power */
@@ -1180,7 +1340,7 @@ void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
  * the emulator thread when it calls gui_run(FALSE) which calls EnableWindow on the Run lamp
  *              while (running)
  *                  Sleep(10);
- */             
+ */
             }
             stuff_and_wait("reset", 0, 500);
 
@@ -1190,7 +1350,7 @@ void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
             for (i = 0; i < NBUTTONS; i++)  /* repaint all of the lamps */
                 if (! btn[i].pushable)
                     InvalidateRect(btn[i].hBtn, NULL, TRUE);
-            if ((cr_unit.flags & UNIT_ATT) && 
+            if ((cr_unit.flags & UNIT_ATT) &&
                 (btn[IDC_1442].state!=STATE_1442_FULL)) {
                 stuff_and_wait("detach cr", 0, 500);
                 update_gui(TRUE);
@@ -1249,7 +1409,7 @@ void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
 /* this prevents message pump from running, which unfortunately locks up
  * the emulator thread when it calls gui_run(FALSE) which calls EnableWindow on the Run lamp
  *              while (running)
- *                  Sleep(10);              
+ *                  Sleep(10);
  */
             }
             break;
@@ -1260,7 +1420,7 @@ void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
                 forms_check(0);             /* clear forms-check status */
                 print_check(0);
             }
-            if ((cr_unit.flags & UNIT_ATT) && 
+            if ((cr_unit.flags & UNIT_ATT) &&
                 (btn[IDC_1442].state!=STATE_1442_FULL)) {
                 stuff_and_wait("detach cr", 0, 500);
                 update_gui(TRUE);
@@ -1312,12 +1472,12 @@ void HandleCommand (HWND hWnd, WORD wNotify, WORD idCtl, HWND hwCtl)
             }
             break;
     }
-    
+
     SetForegroundWindow(hConsoleWindow);
     update_gui(FALSE);
 }
 
-/* ------------------------------------------------------------------------ 
+/* ------------------------------------------------------------------------
  * ConsoleWndProc - window process for the console display
  * ------------------------------------------------------------------------ */
 
@@ -1327,16 +1487,21 @@ LRESULT CALLBACK ConsoleWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     PAINTSTRUCT ps;
     POINT p;
     RECT clip, xsect, rbmp;
-    int i;
 
     switch (uMsg) {
         case WM_CLOSE:
+            if (hWnd == hConsoleWnd) {
+                DragAcceptFiles(hWnd, FALSE);       /* unregister as drag/drop target */
+            }
             DestroyWindow(hWnd);
             break;
 
         case WM_DESTROY:
-            gui_run(FALSE);
-            hConsoleWnd = NULL;
+            if (hWnd == hConsoleWnd) {
+                gui_run(FALSE);
+                release_gui_resources();
+                hConsoleWnd = NULL;
+            }
             break;
 
         case WM_ERASEBKGND:
@@ -1380,10 +1545,11 @@ LRESULT CALLBACK ConsoleWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
             HandleClick(hWnd, LOWORD(lParam), HIWORD(lParam), TRUE, TRUE);
             break;
 
-        case WM_CTLCOLORBTN:
-            i = GetWindowLongPtr((HWND) lParam, GWLP_ID);
-            if (BETWEEN(i, 0, NBUTTONS-1))
-                return (LRESULT) (power && IsWindowEnabled((HWND) lParam) ? btn[i].hbrLit : btn[i].hbrDark);
+        case WM_CTLCOLORBTN: {
+            LONG_PTR idx = GetWindowLongPtr((HWND) lParam, GWLP_ID);
+            if (BETWEEN(idx, 0, NBUTTONS-1))
+                return (LRESULT) (power && IsWindowEnabled((HWND) lParam) ? btn[idx].hbrLit : btn[idx].hbrDark);
+        }
 
         case WM_TIMER:
             if (wParam == FLASH_TIMER_ID && hFlashTimer != 0) {
@@ -1506,8 +1672,8 @@ static BOOL is_scp_file(const char *filename)
             cptr++;
         ++lines;
         for (i = 0; i < strlen(cptr); i++)
-            if ((cptr[i] & 0x80) || 
-                ((!isprint(cptr[i])) && (!isspace(cptr[i])))) 
+            if ((cptr[i] & 0x80) ||
+                ((!isprint(cptr[i])) && (!isspace(cptr[i]))))
                 result = FALSE;                         /* SCP files only have printable ASCII */
         if ((*cptr == ';') || (*cptr == '#')) {         /* ignore comments */
             ++comment_lines;
@@ -1569,7 +1735,7 @@ static void accept_dropped_file (HANDLE hDrop)
     scp_file = is_scp_file(fname);
     if (cardreader) {
         if (scp_file) {
-            snprintf(msg, sizeof(msg)-1, "\"%s\"\r\n\r\nContains SCP commands (not card reader input).\r\n\r\nProcess as SCP commands?", fname); 
+            snprintf(msg, sizeof(msg)-1, "\"%s\"\r\n\r\nContains SCP commands (not card reader input).\r\n\r\nProcess as SCP commands?", fname);
             if (IDYES != MessageBox(hConsoleWnd, msg, "", MB_YESNO))
                 return;
             cardreader = FALSE;                 /* Process as SCP commands */
@@ -1668,6 +1834,8 @@ static DWORD WINAPI CmdThread (LPVOID arg)
     HANDLE hStdIn = GetStdHandle(STD_INPUT_HANDLE);
     DWORD dwBytesRead;
 
+    UNUSED_ARG(arg);
+
     for (;;) {
         if (WAIT_TIMEOUT == WaitForSingleObject(hCmdReadEvent, 2000))   /* wait for request */
             continue;                                           /* put breakpoint here to debug */
@@ -1680,14 +1848,14 @@ static DWORD WINAPI CmdThread (LPVOID arg)
             NEXT_SCP_COMMAND;
             SetEvent(hCmdReadyEvent);                           /* notify main thread a line is ready */
         } else {
-            DWORD dwError = GetLastError();
-
+            if (GetLastError() != ERROR_IO_PENDING)
+                GUIReportError("CmdThread.ReadFile");
             scp_reading = FALSE;
             NEXT_SCP_COMMAND;
         }
     }
     return 0;
-}                                   
+}
 
 static void read_atexit (void)
 {
@@ -1712,6 +1880,8 @@ static void read_atexit (void)
 char *read_cmdline (char *ptr, int size, FILE *stream)
 {
     char *cptr;
+
+    UNUSED_ARG(stream);
 
     if (hCmdThread == NULL) {                               /* set up command-reading thread */
         if ((hCmdReadEvent  = CreateEvent(NULL, FALSE, FALSE, NULL)) == NULL)
@@ -1743,7 +1913,7 @@ long stuff_cmd (char *cmd)
 {
     INPUT_RECORD *ip;
     size_t i, j, cmdsize = strlen(cmd);
-    DWORD dwEventsWritten;
+    DWORD dwEventsToWrite, dwEventsWritten;
     long scp_cmd = SCP_COMMAND;
 
     ip = (INPUT_RECORD *)calloc(2+2*cmdsize, sizeof(*ip));
@@ -1763,7 +1933,8 @@ long stuff_cmd (char *cmd)
     j++;
     ip[j] = ip[j-1];
     ip[j].Event.KeyEvent.bKeyDown = FALSE;
-    WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE), ip, 2+j, &dwEventsWritten);
+    dwEventsToWrite = 2 + ((DWORD) j);
+    WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE), ip, dwEventsToWrite, &dwEventsWritten);
     free(ip);
     return scp_cmd;
 }
