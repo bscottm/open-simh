@@ -146,11 +146,12 @@ MTAB vt_mod[] = {
     { 0 }  };
 
 
-static t_bool vt_stop_flag = FALSE;
+/* vt_stop_flag can be altered across SDL-initiated threads. */
+static SDL_atomic_t vt_stop_flag;
 
 static void vt_quit_callback (void)
 {
-vt_stop_flag = TRUE;
+SDL_AtomicSet(&vt_stop_flag, TRUE);
 }
 
 /* Debug detail levels */
@@ -320,8 +321,8 @@ vt_svc(UNIT *uptr)
     sim_debug (DEB_TRC, &vt_dev, "vt_svc(wait=%d,DPC=0%o)\n", uptr->wait, vt11_get_dpc());
     if (vt11_cycle(uptr->wait, 0))
         sim_activate_after (uptr, uptr->wait);  /* running; reschedule */
-    if (vt_stop_flag) {
-        vt_stop_flag = FALSE;                   /* reset flag after we notice it */
+    if (SDL_AtomicGet(&vt_stop_flag)) {
+        SDL_AtomicSet(&vt_stop_flag, FALSE);    /* reset flag after we notice it */
         return SCPE_STOP;
         }
     return SCPE_OK;
@@ -340,7 +341,9 @@ vt_reset(DEVICE *dptr)
         }
     if (!(dptr->flags & DEV_DIS))
         vt11_reset(dptr, DEB_VT11);
+    SDL_AtomicSet(&vt_stop_flag, FALSE);
     vid_register_quit_callback (&vt_quit_callback);
+    vid_set_beep_duration(BEEP_SHORT);
     sim_debug (DEB_INT, &vt_dev, "CLR_INT(all)\n");
     CLR_INT (VTST);
     CLR_INT (VTLP);
@@ -717,7 +720,7 @@ vt_boot(int32 unit, DEVICE *dptr)
     t_stat r;
     char stability[32];
     extern int32 saved_PC;
-
+    
     if (sim_switch_number == 40) {      /* GT40 Boot? */
         set_cmd (0, "CPU 11/05");
         set_cmd (0, "CPU 16k");

@@ -612,6 +612,7 @@ t_stat do_cmd_label (int32 flag, CONST char *cptr, CONST char *label);
 void int_handler (int signal);
 t_stat set_prompt (int32 flag, CONST char *cptr);
 t_stat set_runlimit (int32 flag, CONST char *cptr);
+t_stat sim_video_params (int32 flag, CONST char *cptr);
 t_stat sim_set_asynch (int32 flag, CONST char *cptr);
 static const char *_get_dbg_verb (uint32 dbits, DEVICE* dptr, UNIT *uptr);
 static t_stat sim_sanity_check_register_declarations (DEVICE **devices);
@@ -1595,7 +1596,13 @@ static const char simh_help1[] =
       "++++++++                     available\n"
 #define HLP_NOAUTOSIZE  "*Commands SET NoAutosize"
       "3NoAutosize\n"
-      "+SET NOAUTOSIZE              disables disk autosizing for all disks\n";
+      "+SET NOAUTOSIZE              disables disk autosizing for all disks\n"
+#define HLP_VIDEOPARAMS "*Commands Set Video"
+      "3Video\n"
+      "+SET VIDEO NATIVE            Sets video 'native' (vs. software) rendering\n"
+      "++++++++                     flag\n"
+      "+SET VIDEO NONATIVE          Reverts video to software rendering pipeline\n"
+      ;
 static const char simh_help2[] =
       /***************** 80 character line width template *************************/
 #define HLP_SHOW        "*Commands SHOW"
@@ -2664,6 +2671,7 @@ static CTAB set_glob_tab[] = {
     { "RUNLIMIT",   &set_runlimit,              1, HLP_RUNLIMIT },
     { "NORUNLIMIT", &set_runlimit,              0, HLP_RUNLIMIT },
     { "NOAUTOSIZE", &sim_disk_set_noautosize,   1, HLP_NOAUTOSIZE },
+    { "VIDEO",      &sim_video_params,          1, HLP_VIDEOPARAMS },
     { NULL,         NULL,                       0 }
     };
 
@@ -2767,9 +2775,11 @@ return 0;
 
 t_stat process_stdin_commands (t_stat stat, char *argv[], t_bool do_called);
 
-/* Main command loop */
+/* Simulator main(). Simulators that don't use video features just simply invoke this function,
+ * (see sim_main.c). Simulators that use video invoke this function in its own thread. Best of
+ * both worlds without clever code contortions. */
 
-int main (int argc, char *argv[])
+int simulator_main (int argc, char *argv[])
 {
 char cbuf[4*CBUFSIZE], *cptr, *cptr2;
 char nbuf[PATH_MAX + 7];
@@ -6724,6 +6734,30 @@ if (flag) {
         fprintf (st, "\n        Virtual Hard Disk (VHD) support");
     if (sim_disk_raw_support())
         fprintf (st, "\n        RAW disk and CD/DVD ROM support");
+#if defined(USE_SIM_VIDEO) && defined(HAVE_LIBSDL)
+    fprintf(st, "\n        Simulator executing in its own thread");
+#  if defined(_WIN32) || defined(WIN32)
+     /* Theoretically, since sdkddkver.h got included, _WIN32_WINNT_WIN8 should exist. */
+#    if (defined(_WIN32_WINNT_WIN8) && _WIN32_WINNT >= _WIN32_WINNT_WIN8) || (_WIN32_WINNT >= 0x0602)
+        ULONG_PTR stack_low, stack_high;
+
+        GetCurrentThreadStackLimits(&stack_low, &stack_high);
+        fprintf(st, "\n        Simulator thread stack size: %luK", (stack_high - stack_low) / 1024);
+#    else
+        fprintf(st, "\n        Simulator thread stack size: No Windows API, cannot determine.");
+#    endif
+#  elif defined(HAVE_PTHREADS)
+    pthread_attr_t      pattr;
+    size_t              stack_size;
+
+    if (!pthread_attr_init(&pattr) && !pthread_attr_getstacksize(&pattr , &stack_size))
+        fprintf(st, "\n        Simulator thread stack size: %" SIZE_T_FMT "uK", stack_size / 1024);
+    else
+        fprintf(st, "\n        Simulator thread stack size: cannot determine.");
+#  else
+    fprintf(st, "\n        Simulator thread stack size: cannot determine, no usable API.");
+#  endif
+#endif
 #if defined (SIM_ASYNCH_IO)
     fprintf (st, "\n        Asynchronous I/O support (%s)", AIO_QUEUE_MODE);
 #endif
@@ -6788,6 +6822,16 @@ if (flag) {
 #else
     fprintf (st, "\n        Build Tool: undefined (probably cmake)");
 #endif
+    /* LP64, ILP64 or 32-bit? */
+    fprintf(st, "\n        Platform: ");
+    if (sizeof(void *) > 4) {
+        if (sizeof(size_t) > sizeof(int))
+            fprintf(st, "LP64 (long/pointer %" SIZE_T_FMT "u bits, int %" SIZE_T_FMT "u bits)",
+                    sizeof(size_t) * 8, sizeof(int) * 8);
+        else
+            fprintf(st, "ILP64 (long/pointer/int %" SIZE_T_FMT "u bits)", sizeof(int) * 8);
+    } else
+        fprintf(st, "32 bits");
     fprintf (st, "\n        Memory Access: %s Endian", sim_end ? "Little" : "Big");
     fprintf (st, "\n        Memory Pointer Size: %d bits", (int)sizeof(dptr)*8);
     fprintf (st, "\n        %s", sim_toffset_64 ? "Large File (>2GB) support" : "No Large File support");
@@ -7997,6 +8041,20 @@ else
 return SCPE_OK;
 }
 
+t_stat sim_video_params (int32 flag, CONST char *cptr)
+{
+    char gbuf[CBUFSIZE];
+
+    cptr = get_glyph (cptr, gbuf, 0);               /* get next glyph */
+    if (!strcasecmp(gbuf, "NATIVE")) {
+        vid_native_renderer(TRUE);
+    } else if (!strcasecmp(gbuf, "NONATIVE")) {
+        vid_native_renderer(FALSE);
+    } else {
+        return sim_messagef(SCPE_ARG, "'%s' is not a valid video parameter.\n", gbuf);
+    }
+    return SCPE_OK;
+}
 /* Reset devices start..end
 
    Inputs:
