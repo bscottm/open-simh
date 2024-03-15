@@ -26,7 +26,7 @@ jobs:
         sudo apt install -ym ninja-build
     - name: cmake-builder.sh
       run: |
-        cmake/cmake-builder.sh --config Release --flavor ninja --lto --notest --parallel --verbose --cpack_suffix x86_64-${{matrix.os}}
+        cmake/cmake-builder.sh --config Release --flavor ninja --notest --parallel --verbose --cpack_suffix x86_64-${{matrix.os}}
     - name: SIMH simulator suite test
       run: |
         cmake/cmake-builder.sh --config Release --flavor ninja --testonly
@@ -206,7 +206,7 @@ jobs:
           Push-Location $env:VCPKG_ROOT
           git pull
           Pop-Location
-          ./cmake/cmake-builder.ps1 -flavor vs2022 -config Release -clean -lto -verbose -notest -cpack_suffix win32-native
+          ./cmake/cmake-builder.ps1 -flavor vs2022 -config Release -clean -verbose -notest -cpack_suffix win32-native
     - name: SIMH simulator suite test
       shell: pwsh
       run: |
