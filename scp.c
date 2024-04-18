@@ -2802,7 +2802,7 @@ if (*argv[0]) {                                         /* sim name arg? */
     char *np;                                           /* "path.ini" */
 
     strlcpy (nbuf, argv[0], PATH_MAX + 2);              /* copy sim name */
-    if ((np = (char *)match_ext (nbuf, "EXE")))         /* remove .exe */
+    if ((np = (char *)match_ext (nbuf, "EXE")) != NULL) /* remove .exe */
         *np = 0;
     np = strrchr (nbuf, '/');                           /* strip path and try again in cwd */
     if (np == NULL)
@@ -2953,24 +2953,24 @@ if (docmdp) {
     else
         stat = SCPE_OPENERR;
     if (SCPE_BARE_STATUS(stat) == SCPE_OPENERR)
-        stat = docmdp->action (-1, "simh.ini");             /* simh.ini proc cmd file */
-    if (*cbuf)                                              /* cmd file arg? */
-        stat = docmdp->action (0, cbuf);                    /* proc cmd file */
+        stat = docmdp->action (-1, "simh.ini");                   /* simh.ini proc cmd file */
+    if (*cbuf)                                                    /* cmd file arg? */
+        stat = docmdp->action (0, cbuf);                          /* proc cmd file */
     else {
-        if (*argv[0]) {                                    /* sim name arg? */
-            char *np;                                      /* "path.ini" */
-            nbuf[0] = '"';                                 /* starting " */
-            strlcpy (nbuf + 1, argv[0], PATH_MAX + 2);     /* copy sim name */
-            if ((np = (char *)match_ext (nbuf, "EXE")))    /* remove .exe */
+        if (*argv[0]) {                                           /* sim name arg? */
+            char *np;                                             /* "path.ini" */
+            nbuf[0] = '"';                                        /* starting " */
+            strlcpy (nbuf + 1, argv[0], PATH_MAX + 2);            /* copy sim name */
+            if ((np = (char *)match_ext (nbuf, "EXE")) != NULL)   /* remove .exe */
                 *np = 0;
-            strlcat (nbuf, ".ini\"", sizeof (nbuf));       /* add .ini" */
-            stat = docmdp->action (-1, nbuf) & ~SCPE_NOMESSAGE; /* proc default cmd file */
-            if (stat == SCPE_OPENERR) {                    /* didn't exist/can't open? */
-                np = strrchr (nbuf, '/');                  /* strip path and try again in cwd */
+            strlcat (nbuf, ".ini\"", sizeof (nbuf));              /* add .ini" */
+            stat = docmdp->action (-1, nbuf) & ~SCPE_NOMESSAGE;   /* proc default cmd file */
+            if (stat == SCPE_OPENERR) {                           /* didn't exist/can't open? */
+                np = strrchr (nbuf, '/');                         /* stript path and try again in cwd */
                 if (np == NULL)
-                    np = strrchr (nbuf, '\\');             /* windows path separator */
+                    np = strrchr (nbuf, '\\');                    /* windows path separator */
                 if (np == NULL)
-                    np = strrchr (nbuf, ']');              /* VMS path separator */
+                    np = strrchr (nbuf, ']');                     /* VMS path separator */
                 if (np != NULL) {
                     *np = '"';
                     stat = docmdp->action (-1, np) & ~SCPE_NOMESSAGE;/* proc default cmd file */
@@ -3057,7 +3057,7 @@ while (stat != SCPE_EXIT) {                             /* in case exit */
         sim_if_result_last[sim_do_depth] = sim_if_result[sim_do_depth];
         sim_if_result[sim_do_depth] = sim_if_cmd[sim_do_depth] = FALSE;
         }
-    if ((cmdp = find_cmd (gbuf))) {                     /* lookup command */
+    if ((cmdp = find_cmd (gbuf)) != NULL) {             /* lookup command */
         if (do_called && (cmdp->action == &return_cmd)) /* RETURN command? */
             break;
         stat = cmdp->action (cmdp->arg, cptr);          /* if found, exec */
@@ -3712,7 +3712,7 @@ CTAB *cmdp;
 
 if (*cptr) {
     get_glyph (cptr, gbuf, 0);
-    if ((cmdp = find_cmd (gbuf))) {
+    if ((cmdp = find_cmd (gbuf)) != NULL) {
         if (cmdp->action == &exdep_cmd) {
             if (dptr->help)
                 return dptr->help (st, dptr, uptr, flag, cmdp->name);
@@ -3824,26 +3824,24 @@ if (*cptr) {
                 }
             return SCPE_OK;
             }
-        if ((cmdp = find_cmd (gbuf))) {
+        if ((cmdp = find_cmd (gbuf)) != NULL) {
             if (*cptr) {
                 if ((cmdp->action == &set_cmd) || (cmdp->action == &show_cmd)) {
-                    DEVICE *dptr;
-                    UNIT *uptr;
-                    t_stat r;
+                    DEVICE *cmd_dptr;
+                    UNIT *cmd_uptr;
 
                     cptr = get_glyph (cptr, gbuf, 0);
-                    dptr = find_unit (gbuf, &uptr);
-                    if (dptr == NULL)
-                        dptr = find_dev (gbuf);
-                    if (dptr != NULL) {
-                        r = help_dev_help (stdout, dptr, uptr, flag, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
+                    cmd_dptr = find_unit (gbuf, &cmd_uptr);
+                    if (cmd_dptr == NULL)
+                        cmd_dptr = find_dev (gbuf);
+                    if (cmd_dptr != NULL) {
+                        t_stat help_ret = help_dev_help (stdout, cmd_dptr, cmd_uptr, flag, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
                         if (sim_log && (!sim_oline))
-                            help_dev_help (sim_log, dptr, uptr, flag | SCP_HELP_FLAT, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
-                        return r;
+                            help_dev_help (sim_log, cmd_dptr, cmd_uptr, flag | SCP_HELP_FLAT, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
+                        return help_ret;
                         }
                     if (cmdp->action == &set_cmd) { /* HELP SET xxx (not device or unit) */
-                        if ((cmdp = find_ctab (set_glob_tab, gbuf)) &&
-                             (cmdp->help))
+                        if ((cmdp = find_ctab (set_glob_tab, gbuf)) != NULL)
                             return help_cmd_output (flag, cmdp->help, cmdp->help_base);
                         }
                     else { /* HELP SHOW xxx (not device or unit) */
@@ -3858,28 +3856,28 @@ if (*cptr) {
                 }
             if (cmdp->help) {
                 if (strcmp (cmdp->name, "HELP") == 0) {
-                    DEVICE *dptr;
+                    DEVICE *cmd_dptr;
                     int i;
 
-                    for (i = 0; (dptr = sim_devices[i]) != NULL; i++) {
-                        if (dptr->help)
-                            sim_printf ("h{elp} %-17s display help for device %s\n", dptr->name, dptr->name);
-                        if (dptr->attach_help ||
-                            (DEV_TYPE(dptr) == DEV_MUX) ||
-                            (DEV_TYPE(dptr) == DEV_DISK) ||
-                            (DEV_TYPE(dptr) == DEV_TAPE)) {
-                            sim_printf ("h{elp} %s ATTACH\t display help for device %s ATTACH command\n", dptr->name, dptr->name);
+                    for (i = 0; (cmd_dptr = sim_devices[i]) != NULL; i++) {
+                        if (cmd_dptr->help)
+                            sim_printf ("h{elp} %-17s display help for device %s\n", cmd_dptr->name, cmd_dptr->name);
+                        if (cmd_dptr->attach_help || 
+                            (DEV_TYPE(cmd_dptr) == DEV_MUX) ||
+                            (DEV_TYPE(cmd_dptr) == DEV_DISK) ||
+                            (DEV_TYPE(cmd_dptr) == DEV_TAPE)) {
+                            sim_printf ("h{elp} %s ATTACH\t display help for device %s ATTACH command\n", cmd_dptr->name, cmd_dptr->name);
                             }
-                        if (dptr->registers) {
-                            if (dptr->registers->name != NULL)
-                                sim_printf ("h{elp} %s REGISTERS\t display help for device %s register variables\n", dptr->name, dptr->name);
+                        if (cmd_dptr->registers) {
+                            if (cmd_dptr->registers->name != NULL)
+                                sim_printf ("h{elp} %s REGISTERS\t display help for device %s register variables\n", cmd_dptr->name, cmd_dptr->name);
                             }
-                        if (dptr->modifiers) {
+                        if (cmd_dptr->modifiers) {
                             MTAB *mptr;
 
-                            for (mptr = dptr->modifiers; mptr->pstring != NULL; mptr++) {
+                            for (mptr = cmd_dptr->modifiers; mptr->pstring != NULL; mptr++) {
                                 if (mptr->help) {
-                                    sim_printf ("h{elp} %s SET\t\t display help for device %s SET commands (modifiers)\n", dptr->name, dptr->name);
+                                    sim_printf ("h{elp} %s SET\t\t display help for device %s SET commands (modifiers)\n", cmd_dptr->name, cmd_dptr->name);
                                     break;
                                     }
                                 }
@@ -4065,7 +4063,7 @@ return cbuf;
 t_stat do_cmd_label (int32 flag, CONST char *fcptr, CONST char *label)
 {
 char cbuf[4*CBUFSIZE], gbuf[CBUFSIZE], abuf[4*CBUFSIZE], quote, *c, *do_arg[11];
-CONST char *cptr;
+CONST char *cptr = NULL;
 FILE *fpin = NULL;
 CTAB *cmdp = NULL;
 int32 echo, nargs, errabort, i;
@@ -4214,7 +4212,7 @@ do {
         sim_if_result_last[sim_do_depth] = sim_if_result[sim_do_depth];
         sim_if_result[sim_do_depth] = sim_if_cmd[sim_do_depth] = FALSE;
         }
-    if ((cmdp = find_cmd (gbuf))) {                     /* lookup command */
+    if ((cmdp = find_cmd (gbuf)) != NULL) {             /* lookup command */
         if (cmdp->action == &return_cmd)                /* RETURN command? */
             break;                                      /*    done! */
         if (strcmp (cmdp->name, "DO") == 0) {           /* DO command? */
@@ -4521,7 +4519,7 @@ if (*ops == '~') {      /* Substring? */
 else {
     const char *eq;
 
-    if ((eq = strchr (ops, '='))) {     /* Substitute? */
+    if ((eq = strchr (ops, '=')) != NULL) { /* Substitute? */
         const char *last = tstr;
         const char *curr = tstr;
         char *match = (char *)malloc (1 + (eq - ops));
@@ -4532,7 +4530,7 @@ else {
         asterisk_match = (*ops == '*');
         if (asterisk_match)
             memmove (match, match + 1, 1 + strlen (match + 1));
-        while ((curr = strstr (last, match))) {
+        while ((curr = strstr (last, match)) != NULL) {
             if (!asterisk_match) {
                 move_size = MIN((size_t)(curr - last), rbuf_size);
                 memcpy (rbuf, last, move_size);
@@ -5100,7 +5098,7 @@ t_stat reason;
 
 cptr = (CONST char *)get_sim_opt (CMD_OPT_SW|CMD_OPT_DFT, (CONST char *)cptr, &r);
                                                         /* get sw, default */
-sim_stabr.boolop = sim_staba.boolop = -1;               /* no relational op dflt */
+sim_stabr.boolop = sim_staba.boolop = (size_t) -1;      /* no relational op dflt */
 if (*cptr == 0)                                         /* must be more */
     return SCPE_2FARG;
 if ((flag != 1) && (sim_cptr_is_action[sim_do_depth]))
@@ -5950,14 +5948,14 @@ if (*cptr == 0)                                         /* must be more */
     return SCPE_2FARG;
 cptr = get_glyph (svptr = cptr, gbuf, 0);               /* get glob/dev/unit */
 
-if ((dptr = find_dev (gbuf))) {                         /* device match? */
+if ((dptr = find_dev (gbuf)) != NULL) {                 /* device match? */
     uptr = dptr->units;                                 /* first unit */
     ctbr = set_dev_tab;                                 /* global table */
     lvl = MTAB_VDV;                                     /* device match */
     GET_SWITCHES (cptr);                                /* get more switches */
     }
 else {
-    if ((dptr = find_unit (gbuf, &uptr))) {             /* unit match? */
+    if ((dptr = find_unit (gbuf, &uptr)) != NULL) {     /* unit match? */
         if (uptr == NULL)                               /* invalid unit */
             return SCPE_NXUN;
         ctbr = set_unit_tab;                            /* global table */
@@ -5965,13 +5963,13 @@ else {
         GET_SWITCHES (cptr);                            /* get more switches */
         }
     else {
-        if ((gcmdp = find_ctab (set_glob_tab, gbuf))) { /* global? */
+        if ((gcmdp = find_ctab (set_glob_tab, gbuf)) != NULL) { /* global? */
             GET_SWITCHES (cptr);                        /* get more switches */
             return gcmdp->action (gcmdp->arg, cptr);    /* do the rest */
             }
         else {
             if (sim_dflt_dev->modifiers) {
-                if ((cvptr = strchr (gbuf, '=')))       /* = value? */
+                if ((cvptr = strchr (gbuf, '=')) != NULL) /* = value? */
                     *cvptr++ = 0;
                 for (mptr = sim_dflt_dev->modifiers; mptr->mask != 0; mptr++) {
                     if (mptr->mstring && (MATCH_CMD (gbuf, mptr->mstring) == 0)) {
@@ -6000,7 +5998,7 @@ while (*cptr != 0) {                                    /* do all mods */
     cptr = get_glyph (svptr = cptr, gbuf, ',');         /* get modifier */
     if (0 == strcmp (gbuf, ";"))
         break;
-    if ((cvptr = strchr (gbuf, '=')))                   /* = value? */
+    if ((cvptr = strchr (gbuf, '=')) != NULL)           /* = value? */
         *cvptr++ = 0;
     for (mptr = dptr->modifiers; mptr && (mptr->mask != 0); mptr++) {
         if ((mptr->mstring) &&                          /* match string */
@@ -6013,7 +6011,7 @@ while (*cptr != 0) {                                    /* do all mods */
                 if (mptr->valid) {                      /* validation rtn? */
                     if (cvptr && MODMASK(mptr,MTAB_QUOTE)) {
                         svptr = get_glyph_quoted (svptr, gbuf, ',');
-                        if ((cvptr = strchr (gbuf, '='))) {
+                        if ((cvptr = strchr (gbuf, '=')) != NULL) {
                             *cvptr++ = 0;
                             cptr = svptr;
                             }
@@ -6021,7 +6019,7 @@ while (*cptr != 0) {                                    /* do all mods */
                     else {
                         if (cvptr && MODMASK(mptr,MTAB_NC)) {
                             get_glyph_nc (svptr, gbuf, ',');
-                            if ((cvptr = strchr (gbuf, '=')))
+                            if ((cvptr = strchr (gbuf, '=')) != NULL)
                                 *cvptr++ = 0;
                             }
                         }
@@ -6050,7 +6048,7 @@ while (*cptr != 0) {                                    /* do all mods */
             }                                           /* end if match */
         }                                               /* end for */
     if (!mptr || (mptr->mask == 0)) {                   /* no match? */
-        if ((glbr = find_c1tab (ctbr, gbuf))) {         /* global match? */
+        if ((glbr = find_c1tab (ctbr, gbuf)) != NULL) { /* global match? */
             r = glbr->action (dptr, uptr, glbr->arg, cvptr);    /* do global */
             if (r != SCPE_OK)
                 return r;
@@ -6256,14 +6254,14 @@ if ((*cptr == 0) || (*cptr == ';') || (*cptr == '#'))   /* must be more */
     return SCPE_2FARG;
 cptr = get_glyph (svptr = cptr, gbuf, 0);               /* get next glyph */
 
-if ((dptr = find_dev (gbuf))) {                         /* device match? */
+if ((dptr = find_dev (gbuf)) != NULL) {                 /* device match? */
     uptr = dptr->units;                                 /* first unit */
     shtb = show_dev_tab;                                /* global table */
     lvl = MTAB_VDV;                                     /* device match */
     GET_SWITCHES (cptr);                                /* get more switches */
     }
 else {
-    if ((dptr = find_unit (gbuf, &uptr))) {             /* unit match? */
+    if ((dptr = find_unit (gbuf, &uptr)) != NULL) {     /* unit match? */
         if (uptr == NULL)                               /* invalid unit */
             return sim_messagef (SCPE_NXUN, "Non-existent unit: %s\n", gbuf);
         if (uptr->flags & UNIT_DIS)                     /* disabled? */
@@ -6273,13 +6271,13 @@ else {
         GET_SWITCHES (cptr);                            /* get more switches */
         }
     else {
-        if ((shptr = find_shtab (show_glob_tab, gbuf))) {/* global? */
+        if ((shptr = find_shtab (show_glob_tab, gbuf)) != NULL) {/* global? */
             GET_SWITCHES (cptr);                        /* get more switches */
             return shptr->action (ofile, NULL, NULL, shptr->arg, cptr);
             }
         else {
             if (sim_dflt_dev->modifiers) {
-                if ((cvptr = strchr (gbuf, '=')))       /* = value? */
+                if ((cvptr = strchr (gbuf, '=')) != NULL) /* = value? */
                     *cvptr++ = 0;
                 for (mptr = sim_dflt_dev->modifiers; mptr && (mptr->mask != 0); mptr++) {
                     if ((((mptr->mask & MTAB_VDV) == MTAB_VDV) &&
@@ -6295,7 +6293,7 @@ else {
                     }
                 }
             if (!dptr) {
-                if ((shptr = find_shtab (show_dev_tab, gbuf)))  /* global match? */
+                if ((shptr = find_shtab (show_dev_tab, gbuf)) != NULL)  /* global match? */
                     return shptr->action (ofile, sim_dflt_dev, uptr, shptr->arg, cptr);
                 else
                     return sim_messagef (SCPE_NXDEV, "Non-existent device: %s\n", gbuf);/* no match */
@@ -6313,7 +6311,7 @@ GET_SWITCHES (cptr);                                    /* get more switches */
 
 while (*cptr != 0) {                                    /* do all mods */
     cptr = get_glyph (cptr, gbuf, ',');                 /* get modifier */
-    if ((cvptr = strchr (gbuf, '=')))                   /* = value? */
+    if ((cvptr = strchr (gbuf, '=')) != NULL)           /* = value? */
         *cvptr++ = 0;
     for (mptr = dptr->modifiers; mptr && (mptr->mask != 0); mptr++) {
         if (((mptr->mask & MTAB_XTD)?                   /* right level? */
@@ -6328,7 +6326,7 @@ while (*cptr != 0) {                                    /* do all mods */
             }                                           /* end if */
         }                                               /* end for */
     if (!mptr || (mptr->mask == 0)) {                   /* no match? */
-        if (shtb && (shptr = find_shtab (shtb, gbuf))) {/* global match? */
+        if (shtb && (shptr = find_shtab (shtb, gbuf)) != NULL) {/* global match? */
             t_stat r;
 
             r = shptr->action (ofile, dptr, uptr, shptr->arg, cptr);
@@ -6591,7 +6589,7 @@ FILE *f;
 #endif
 memset (toolpath, 0, sizeof(toolpath));
 snprintf (findcmd, sizeof (findcmd), "%s %s %s", FIND_CMD, tool, FIND_CMD2);
-if ((f = popen (findcmd, "r"))) {
+if ((f = popen (findcmd, "r")) != NULL) {
     do {
         if (NULL == fgets (toolpath, sizeof(toolpath)-1, f))
             break;
@@ -6626,7 +6624,7 @@ memset (toolversion, 0, sizeof(toolversion));
 toolpath = sim_get_tool_path (tool);
 if (toolpath[0]) {
     snprintf (versioncmd, sizeof (versioncmd), "%s --version", tool);
-    if ((f = popen (versioncmd, "r"))) {
+    if ((f = popen (versioncmd, "r")) != NULL) {
         do {
             if (NULL == fgets (toolversion, sizeof(toolversion)-1, f))
                 break;
@@ -6823,7 +6821,7 @@ if (flag) {
 #elif defined(_WIN32)
     if (1) {
         char *proc_id = getenv ("PROCESSOR_IDENTIFIER");
-        char *arch = getenv ("PROCESSOR_ARCHITECTURE");
+        char *proc_arch = getenv ("PROCESSOR_ARCHITECTURE");
         char *procs = getenv ("NUMBER_OF_PROCESSORS");
         char *proc_level = getenv ("PROCESSOR_LEVEL");
         char *proc_rev = getenv ("PROCESSOR_REVISION");
@@ -6835,7 +6833,7 @@ if (flag) {
         char proc_name[CBUFSIZE] = "";
         FILE *f;
 
-        if ((f = _popen ("ver", "r"))) {
+        if ((f = _popen ("ver", "r")) != NULL) {
             memset (osversion, 0, sizeof(osversion));
             do {
                 if (NULL == fgets (osversion, sizeof(osversion)-1, f))
@@ -6845,12 +6843,12 @@ if (flag) {
             _pclose (f);
             }
         fprintf (st, "\n        OS: %s", osversion);
-        fprintf (st, "\n        Architecture: %s%s%s, Processors: %s", arch, proc_arch3264 ? " on " : "", proc_arch3264 ? proc_arch3264  : "", procs);
+        fprintf (st, "\n        Architecture: %s%s%s, Processors: %s", proc_arch, proc_arch3264 ? " on " : "", proc_arch3264 ? proc_arch3264  : "", procs);
         fprintf (st, "\n        Processor Id: %s, Level: %s, Revision: %s", proc_id ? proc_id : "", proc_level ? proc_level : "", proc_rev ? proc_rev : "");
         strlcpy (wmicpath, sim_get_tool_path ("wmic"), sizeof (wmicpath));
         if (wmicpath[0]) {
             strlcat (wmicpath, " cpu get name", sizeof (wmicpath));
-            if ((f = _popen (wmicpath, "r"))) {
+            if ((f = _popen (wmicpath, "r")) != NULL) {
                 memset (proc_name, 0, sizeof(proc_name));
                 do {
                     if (NULL == fgets (proc_name, sizeof(proc_name)-1, f))
@@ -7000,11 +6998,11 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
     if (!only_enabled || !qdisable (dptr))
         show_device (st, dptr, flag);
 if (sim_switches & SWMASK ('I')) {
-    for (i = dev_name_len = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i)
+    for (i = dev_name_len = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i)
         if (!only_enabled || !qdisable (dptr))
             _set_dname_len (dptr);
     fprintf (st, "\nInternal Devices%s\n\n", only_enabled ? " (enabled devices)" : "");
-    for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i)
+    for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i)
         if (!only_enabled || !qdisable (dptr))
             show_device (st, dptr, flag);
     }
@@ -7278,7 +7276,7 @@ if (cptr && (*cptr != 0))                               /* now eol? */
     return SCPE_2MARG;
 for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
     show_dev_modifiers (st, dptr, NULL, flag, cptr);
-for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i)
+for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i)
     show_dev_modifiers (st, dptr, NULL, flag, cptr);
 return SCPE_OK;
 }
@@ -7338,7 +7336,7 @@ if (cptr && (*cptr != 0))                               /* now eol? */
     return SCPE_2MARG;
 for (i = 0; (dptr = sim_devices[i]) != NULL; i++)
     show_dev_show_commands (st, dptr, NULL, flag, cptr);
-for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i)
+for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i)
     show_dev_show_commands (st, dptr, NULL, flag, cptr);
 return SCPE_OK;
 }
@@ -7695,16 +7693,16 @@ GET_SWITCHES (cptr);                                    /* get switches */
 if ((!cptr) || (*cptr == '\0'))
     return sim_messagef (SCPE_2FARG, "Must specify a directory path\n");
 strlcpy (path, cptr, sizeof (path));
-while ((c = strchr (path, '\\')))
+while ((c = strchr (path, '\\')) != NULL)
     *c = '/';
 if (path[strlen (path) - 1] == '/')     /* trim any trailing / from the path */
     path[strlen (path) - 1] = '\0';
-while ((c = strstr (path, "//")))
+while ((c = strstr (path, "//")) != NULL)        
     memmove (c, c + 1, strlen (c + 1) + 1); /* clean out any empty directories // */
 if ((!sim_stat (path, &filestat)) && (filestat.st_mode & S_IFDIR))
     return sim_messagef (SCPE_OK, "directory %s already exists\n", path);
 c = path;
-while ((c = strchr (c, '/'))) {
+while ((c = strchr (c, '/')) != NULL) {
     *c = '\0';
     if (!sim_stat (path, &filestat)) {
         if (filestat.st_mode & S_IFDIR) {
@@ -7744,7 +7742,7 @@ DEVICE *dptr;
 
 GET_SWITCHES (cptr);                                    /* get switches */
 cptr = get_glyph (svptr = cptr, gbuf, 0);               /* get next glyph */
-if ((dptr = find_dev (gbuf)))                           /* device match? */
+if ((dptr = find_dev (gbuf)) != NULL)                   /* device match? */
 return set_dev_debug (dptr, NULL, flg, *cptr ? cptr : NULL);
 cptr = svptr;
 if (flg)
@@ -7781,7 +7779,7 @@ if (uptr == NULL)
 max = uptr->capac - 1;
 abuf[sizeof(abuf)-1] = '\0';
 strlcpy (abuf, cptr, sizeof(abuf));
-if ((aptr = strchr (abuf, ';'))) {                      /* ;action? */
+if ((aptr = strchr (abuf, ';')) != NULL) {              /* ;action? */
     cptr += aptr - abuf + 1;
     if (flg != SSH_ST)                                  /* only on SET */
         return sim_messagef (SCPE_ARG, "Invalid argument: %s\n", cptr);
@@ -8045,7 +8043,7 @@ for (i = start; (dptr = sim_devices[i]) != NULL; i++) {
             }
         }
     }
-for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i) {
+for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i) {
     sim_switches = saved_sim_switches;  /* restore initial switches */
     if (dptr->reset != NULL) {
         reason = dptr->reset (dptr);
@@ -8901,11 +8899,11 @@ if (!dont_detach_attach)
     detach_all (0, 0);                                  /* Detach everything to start from a consistent state */
 else {
     if (!suppress_warning) {
-        uint32 i, j;
+        uint32 i, l;
 
         for (i = 0; (dptr = sim_devices[i]) != NULL; i++) { /* loop thru dev */
-            for (j = 0; j < dptr->numunits; j++) {      /* loop thru units */
-                uptr = (dptr->units) + j;
+            for (l = 0; l < dptr->numunits; l++) {      /* loop thru units */
+                uptr = &dptr->units[l];
                 if (uptr->flags & UNIT_ATT) {           /* attached? */
                     sim_printf ("warning - leaving %s attached to '%s'\n", sim_uname (uptr), uptr->filename);
                     warned = TRUE;
@@ -9422,7 +9420,7 @@ do {
             val = (t_addr)(*sim_vm_pc_value)();
         else
             val = (t_addr)get_rval (sim_PC, 0);
-        if ((!(bp = sim_brk_fnd (val))) || (!(bp->typ & BRK_TYP_DYN_STEPOVER)))
+        if (((bp = sim_brk_fnd (val)) == NULL) || (!(bp->typ & BRK_TYP_DYN_STEPOVER)))
             break;
         sim_brk_clrall (BRK_TYP_DYN_STEPOVER);          /* cancel any step/over subroutine breakpoints */
         }
@@ -9698,9 +9696,9 @@ for (gptr = gbuf, reason = SCPE_OK;
         continue;
         }
 
-    if ((lowr = find_reg (gptr, &tptr, tdptr)) ||       /* local reg or */
-        (!(sim_opt_out & CMD_OPT_DFT) &&                /* no dflt, global? */
-        (lowr = find_reg_glob_reason (gptr, &tptr, &tdptr, &tstat)))) {
+    if ((lowr = find_reg (gptr, &tptr, tdptr)) != NULL || /* local reg or */
+        (!(sim_opt_out & CMD_OPT_DFT) &&                  /* no dflt, global? */
+        (lowr = find_reg_glob_reason (gptr, &tptr, &tdptr, &tstat)) != NULL)) {
         low = high = 0;
         if ((*tptr == '-') || (*tptr == ':')) {
             highr = find_reg (tptr + 1, &tptr, tdptr);
@@ -9728,7 +9726,7 @@ for (gptr = gbuf, reason = SCPE_OK;
         continue;
         }
 
-    if ((ap = getenv (gptr))) {
+    if ((ap = getenv (gptr)) != NULL) {
         strlcpy (gbuf, ap, sizeof (gbuf));
         gptr = gbuf;
         }
@@ -10898,7 +10896,7 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++) {
         (strcmp (cptr, dptr->lname) == 0)))
         return dptr;
     }
-for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i) {
+for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]) != NULL; ++i) {
     if ((strcmp (cptr, dptr->name) == 0) ||
         (dptr->lname &&
         (strcmp (cptr, dptr->lname) == 0)))
@@ -10929,7 +10927,7 @@ DEVICE *dptr;
 if (uptr == NULL)                                       /* arg error? */
     return NULL;
 *uptr = NULL;
-if ((dptr = find_dev (cptr))) {                         /* exact match? */
+if ((dptr = find_dev (cptr)) != NULL) {                 /* exact match? */
     if (qdisable (dptr))                                /* disabled? */
         return NULL;
     *uptr = dptr->units;                                /* unit 0 */
@@ -10940,9 +10938,9 @@ for (i = 0; (dptr = sim_devices[i]) != NULL; i++) {     /* base + unit#? */
     if (qdisable (dptr))                                /* device disabled? */
         continue;
     if (dptr->numunits &&                               /* any units? */
-        (((nptr = dptr->name) &&
+        (((nptr = dptr->name) != NULL &&
           (strncmp (cptr, nptr, strlen (nptr)) == 0)) ||
-         ((nptr = dptr->lname) &&
+         ((nptr = dptr->lname) != NULL &&
           (strncmp (cptr, nptr, strlen (nptr)) == 0)))) {
         tptr = cptr + strlen (nptr);
         if (sim_isdigit (*tptr)) {
@@ -11056,11 +11054,11 @@ if (stat)
     *stat = SCPE_OK;
 *gdptr = NULL;
 for (j = 0; (devs = dptrptr[j]) != NULL; j++) {
-    for (i = 0; (dptr = devs[i]) != NULL; i++) {        /* all dev */
-        if (dptr->flags & DEV_DIS)                          /* skip disabled */
+    for (i = 0; (dptr = devs[i]) != NULL; i++) {             /* all dev */
+        if (dptr->flags & DEV_DIS)                           /* skip disabled */
             continue;
-        if ((rptr = find_reg (cptr, optr, dptr))) {         /* found? */
-            if (srptr) {                                    /* ambig? err */
+        if ((rptr = find_reg (cptr, optr, dptr)) != NULL) {  /* found? */
+            if (srptr) {                                     /* ambig? err */
                 if (stat) {
                     if (sim_show_message) {
                         if (*stat == SCPE_OK)
@@ -11073,8 +11071,8 @@ for (j = 0; (devs = dptrptr[j]) != NULL; j++) {
                 else
                     return NULL;
                 }
-            srptr = rptr;                                   /* save reg */
-            *gdptr = dptr;                                  /* save unit */
+            srptr = rptr;                                    /* save reg */
+            *gdptr = dptr;                                   /* save unit */
             }
         }
     }
@@ -11271,7 +11269,7 @@ while (*cptr) {                                         /* loop through modifier
         }
     else if ((opt & CMD_OPT_DFT) &&                     /* default allowed? */
         ((sim_opt_out & CMD_OPT_DFT) == 0) &&           /* none yet? */
-        (tdptr = find_unit (gbuf, &tuptr)) &&           /* try for default */
+        (tdptr = find_unit (gbuf, &tuptr)) != NULL &&   /* try for default */
         (tuptr != NULL)) {
         sim_dfdev = tdptr;                              /* set as default */
         sim_dfunit = tuptr;
@@ -11295,7 +11293,7 @@ return cptr;
 const char *put_switches (char *buf, size_t bufsize, uint32 sw)
 {
 char *optr = buf;
-int32 bit;
+char bit;
 
 memset (buf, 0, bufsize);
 if ((sw == 0) || (bufsize < 3))
@@ -11369,15 +11367,15 @@ const size_t invalid_op = (size_t) -1;
 logval = cmpval = 0;
 if (*cptr == 0)                                         /* check for clause */
     return NULL;
-for (logop = cmpop = invalid_op; (c = *cptr++); ) {             /* loop thru clauses */
-    if ((sptr = strchr (logstr, c))) {                  /* check for mask */
+for (logop = cmpop = invalid_op; (c = *cptr++); ) {     /* loop thru clauses */
+    if ((sptr = strchr (logstr, c)) != NULL) {          /* check for mask */
         logop = sptr - logstr;
         logval = strtotv (cptr, &tptr, radix);
         if (cptr == tptr)
             return NULL;
         cptr = tptr;
         }
-    else if ((sptr = strchr (cmpstr, c))) {             /* check for boolop */
+    else if ((sptr = strchr (cmpstr, c)) != NULL) {     /* check for boolop */
         cmpop = sptr - cmpstr;
         if (*cptr == '=') {
             cmpop = cmpop + strlen (cmpstr);
@@ -12774,7 +12772,7 @@ uint32 spc = (btyp >> SIM_BKPT_V_SPC) & (SIM_BKPT_N_SPC - 1);
 if (sim_brk_summ & BRK_TYP_DYN_ALL)
     btyp |= BRK_TYP_DYN_ALL;
 
-if ((bp = sim_brk_fnd_ex (loc, btyp, TRUE, spc))) {     /* in table, and type match? */
+if ((bp = sim_brk_fnd_ex (loc, btyp, TRUE, spc)) != NULL) { /* in table, and type match? */
     double s_gtime = sim_gtime ();                      /* get time now */
 
     if (bp->time_fired[spc] == s_gtime)                 /* already taken?  */
@@ -14024,7 +14022,7 @@ while (1) {                                         /* format passed string, arg
 if (sim_is_running) {
     char *c, *remnant = buf;
 
-    while ((c = strchr (remnant, '\n'))) {
+    while ((c = strchr (remnant, '\n')) != NULL) {
         if ((c != buf) && (*(c - 1) != '\r'))
             fprintf (stdout, "%.*s\r\n", (int)(c-remnant), remnant);
         else
@@ -14116,7 +14114,7 @@ if (sim_do_ocptr[sim_do_depth]) {
 if (sim_is_running && !inhibit_message) {
     char *c, *remnant = buf;
 
-    while ((c = strchr(remnant, '\n'))) {
+    while ((c = strchr(remnant, '\n')) != NULL) {
         if ((c != buf) && (*(c - 1) != '\r'))
             fprintf (stdout, "%.*s\r\n", (int)(c-remnant), remnant);
         else
@@ -14714,15 +14712,15 @@ for (hblock = astrings; (htext = *hblock) != NULL; hblock++) {
                 }
             excluded = FALSE;
             if (*start == '?') {                /* Conditional topic? */
-                size_t n = 0;
+                size_t n1 = 0;
                 start++;
                 while (sim_isdigit (*start))    /* Get param # */
-                    n += (n * 10) + (*start++ - '0');
-                if (!*start || *start == '\n'|| n == 0 || n >= VSMAX)
+                    n1 += (n1 * 10) + (*start++ - '0');
+                if (!*start || *start == '\n'|| n1 == 0 || n >= VSMAX)
                     FAIL (SCPE_ARG, Invalid parameter number, start);
-                while (n > vsnum)               /* Get arg pointer if not cached */
+                while (n1 > vsnum)               /* Get arg pointer if not cached */
                     vstrings[vsnum++] = va_arg (ap, char *);
-                end = vstrings[n-1];            /* Check for True */
+                end = vstrings[n1-1];            /* Check for True */
                 if (!end || !(sim_toupper (*end) == 'T' || *end == '1')) {
                     excluded = TRUE;            /* False, skip topic this time */
                     if (*htext)
@@ -15109,7 +15107,7 @@ while (TRUE) {
 
     if (topic->kids) {
         size_t w = 0;
-        char *p;
+        char *q;
         char tbuf[CBUFSIZE];
 
         fprintf (st, "\n    Additional information available:\n\n");
@@ -15117,9 +15115,9 @@ while (TRUE) {
             strlcpy (tbuf, topic->children[i]->title +
                     ((topic->children[i]->flags & HLP_MAGIC_TOPIC)? 1 : 0),
                     sizeof (tbuf));
-            for (p = tbuf; *p; p++) {
-                if (blankch (*p))
-                    *p = '_';
+            for (q = tbuf; *q; q++) {
+                if (blankch (*q))
+                    *q = '_';
                 }
             w += 4 + topic->kidwid;
             if (w > 80) {
@@ -15263,20 +15261,20 @@ if (fp == NULL) {
          */
         fbuf[sizeof(fbuf)-1] = '\0';
         strlcpy (fbuf, sim_argv[0], sizeof (fbuf));
-        if ((p = (char *)match_ext (fbuf, "EXE")))
+        if ((p = (char *)match_ext (fbuf, "EXE")) != NULL)
             *p = '\0';
-        if ((p = strrchr (fbuf, '\\'))) {
+        if ((p = strrchr (fbuf, '\\')) != NULL) {
             p[1] = '\0';
             d = "%s\\";
             }
         else {
-            if ((p = strrchr (fbuf, '/'))) {
+            if ((p = strrchr (fbuf, '/')) != NULL) {
                 p[1] = '\0';
                 d = "%s/";
 #ifdef VMS
                 }
             else {
-                if ((p = strrchr (fbuf, ']'))) {
+                if ((p = strrchr (fbuf, ']')) != NULL) {
                     p[1] = '\0';
                     d = "[%s]";
                     }
