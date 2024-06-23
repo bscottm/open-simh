@@ -745,7 +745,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
           VIDEO_CCDEFS += -DHAVE_LIBSDL -DUSE_SIM_VIDEO `$(SDLX_CONFIG) --cflags`
           VIDEO_LDFLAGS += `$(SDLX_CONFIG) --libs`
           VIDEO_FEATURES = - video capabilities provided by libSDL2 (Simple Directmedia Layer)
-          DISPLAYL = ${DISPLAYD}/display.c $(DISPLAYD)/sim_ws.c
+          DISPLAYL = ${DISPLAYD}/display.c
           DISPLAYVT = ${DISPLAYD}/vt11.c
           DISPLAY340 = ${DISPLAYD}/type340.c
           DISPLAYNG = ${DISPLAYD}/ng.c
@@ -1197,7 +1197,7 @@ else
         VIDEO_LDFLAGS  += $(abspath $(dir $(SDL_INCLUDE))\..\..\..\lib\lib-VC2008\Release)/SDL2.lib
       endif
       VIDEO_FEATURES = - video capabilities provided by libSDL2 (Simple Directmedia Layer)
-      DISPLAYL = ${DISPLAYD}/display.c $(DISPLAYD)/sim_ws.c
+      DISPLAYL = ${DISPLAYD}/display.c
       DISPLAYVT = ${DISPLAYD}/vt11.c
       DISPLAY340 = ${DISPLAYD}/type340.c
       DISPLAYNG = ${DISPLAYD}/ng.c
