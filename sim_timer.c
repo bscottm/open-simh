@@ -137,8 +137,9 @@ static const long     NSEC_PER_SEC_l   = NSEC_PER_SEC_l_VALUE;
 static const double   NSEC_PER_SEC_d   = 1000000000.0;
 
 static const double   USEC_PER_SEC_d   = 1000000.0;
+
 #if !defined(VMS) && !defined(_WIN32)
-static const uint32   USEC_PER_SEC_u32 = 1000000;
+static const long     USEC_PER_MSEC_l  = 1000000l / 1000l;
 #endif
 
 #define MSEC_PER_SEC_u32_VALUE  1000u
@@ -146,6 +147,7 @@ static const uint32   USEC_PER_SEC_u32 = 1000000;
 #define MSEC_PER_SEC_ll_VALUE   1000ll
 
 static const uint32   MSEC_PER_SEC_u32 = MSEC_PER_SEC_u32_VALUE;
+static const uint32   MSEC_PER_SEC_l   = MSEC_PER_SEC_l_VALUE;
 
 static const t_int64  NSEC_PER_MSEC_ll = NSEC_PER_SEC_ll_VALUE / MSEC_PER_SEC_ll_VALUE; /* (ns/s) / (ms/s). */
 static const long     NSEC_PER_MSEC_l  = NSEC_PER_SEC_l_VALUE / MSEC_PER_SEC_l_VALUE;   /* (ns/s) / (ms/s). */
@@ -694,7 +696,7 @@ struct timezone foo;
 uint32 msec;
 
 gettimeofday (&cur, &foo);
-msec = (((uint32) cur.tv_sec) * MSEC_PER_SEC_u32) + (((uint32) cur.tv_usec) / USEC_PER_SEC_u32 * MSEC_PER_SEC_u32);
+msec = (uint32) ((cur.tv_sec * MSEC_PER_SEC_l) + (cur.tv_usec / USEC_PER_MSEC_l));
 return msec;
 }
 
