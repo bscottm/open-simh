@@ -340,7 +340,7 @@ if (WITH_NETWORK)
     endif (WITH_TAP)
 
     if (WITH_SLIRP)
-        target_link_libraries(simh_network INTERFACE slirp)
+        target_link_libraries(simh_network INTERFACE slirp_static)
         list(APPEND NETWORK_PKG_STATUS "NAT(SLiRP)")
     endif (WITH_SLIRP)
 

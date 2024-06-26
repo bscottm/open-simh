@@ -1,0 +1,3 @@
+[submodule "libslirp"]
+	path = libslirp
+	url = https://ourdoodlehouse.org/gitlab/scott/libslirp-minimal.git

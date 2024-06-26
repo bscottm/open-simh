@@ -65,8 +65,10 @@ function(build_simcore _targ)
             target_compile_definitions(${lib} PUBLIC WINVER=${TARGET_WINVER} _WIN32_WINNT=${TARGET_WINVER})
         endif ()
 
-        target_compile_definitions(${lib} PRIVATE USE_SIM_CARD USE_SIM_IMD)
-        target_compile_options(${lib} PRIVATE ${EXTRA_TARGET_CFLAGS})
+        target_compile_definitions(${lib} PRIVATE USE_SIM_CARD USE_SIM_IMD ${EXTRA_TARGET_CFLAGS})
+        if (WITH_SLIRP)
+            target_compile_definitions(${lib} PUBLIC HAVE_SLIRP_NETWORK)
+        endif ()
         target_link_options(${lib} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
         # Make sure that the top-level directory is part of the libary's include path:

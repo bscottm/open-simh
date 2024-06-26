@@ -455,7 +455,9 @@ endif ()
 if (NOT DO_DEPENDENCY_BUILD)
     include (add_simulator)
     if (WITH_SLIRP)
-      add_subdirectory(slirp)
+      ## Set the "Don't use GLIB" option here so that the libslirp subdirectory sees it.
+      set(NOGLIB TRUE CACHE BOOL "" FORCE)
+      add_subdirectory(libslirp)
     endif (WITH_SLIRP)
 
 ## Don't delete yet ##    set(Python_ADDITIONAL_VERSIONS 3)
