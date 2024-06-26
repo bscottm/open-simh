@@ -42,6 +42,10 @@ set(SIM_SOURCES
 set(SIM_VIDEO_SOURCES
     ${CMAKE_SOURCE_DIR}/display/display.c)
 
+if (WITH_NETWORK AND WITH_SLIRP)
+    list(APPEND SIM_SOURCES sim_slirp/sim_slirp.c)
+endif ()
+
 ## Build a simulator core library, with and without AIO support. The AIO variant
 ## has "_aio" appended to its name, e.g., "simhz64_aio" or "simhz64_video_aio".
 function(build_simcore _targ)
@@ -66,9 +70,31 @@ function(build_simcore _targ)
         endif ()
 
         target_compile_definitions(${lib} PRIVATE USE_SIM_CARD USE_SIM_IMD ${EXTRA_TARGET_CFLAGS})
-        if (WITH_SLIRP)
-            target_compile_definitions(${lib} PUBLIC HAVE_SLIRP_NETWORK)
+
+        if (WITH_NETWORK AND WITH_SLIRP)
+            target_compile_definitions(
+                ${lib}
+                PUBLIC
+                    HAVE_SLIRP_NETWORK
+                    LIBSLIRP_STATIC
+            )
+
+            if (HAVE_INET_PTON)
+                ## libslirp detects HAVE_INET_PTON for us.
+                target_compile_definitions(${lib} PUBLIC HAVE_INET_PTON)
+            endif()
+            
+            target_include_directories(
+                ${lib} 
+                PUBLIC
+                    ${CMAKE_SOURCE_DIR}/sim_slirp
+                PRIVATE
+                    ${CMAKE_SOURCE_DIR}/libslirp/minimal
+                    ${CMAKE_SOURCE_DIR}/libslirp/src
+                    ${CMAKE_BINARY_DIR}/libslirp/build-include
+            )
         endif ()
+        
         target_link_options(${lib} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
         # Make sure that the top-level directory is part of the libary's include path:
