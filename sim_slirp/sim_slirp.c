@@ -45,13 +45,11 @@
 static int simh_inet_aton(const char *cp, struct in_addr *ia)
 {
     uint32_t addr;
-    INT valid_addr;
+    int valid_addr;
     
 #if defined(HAVE_INET_PTON)
     valid_addr = inet_pton(AF_INET, cp, &addr) > 0;
 #else
-    unsigned long valid_addr;
-
     addr = inet_addr(cp);
     valid_addr = (addr != INADDR_NONE);
 #endif
@@ -63,6 +61,7 @@ static int simh_inet_aton(const char *cp, struct in_addr *ia)
 
     return 0;
 }
+
 #define inet_aton simh_inet_aton
 #else
 #include <sys/socket.h>
@@ -161,6 +160,8 @@ struct slirp_write_request {
     size_t len;
 };
 
+static SlirpConfig *nat_configs = NULL;
+
 struct sim_slirp {
     Slirp *slirp;
     char *args;
@@ -204,6 +205,7 @@ uint32 slirp_dbit;
 SLIRP *sim_slirp_open(const char *args, void *opaque, packet_callback callback, DEVICE *dptr, uint32 dbit, char *errbuf,
                       size_t errbuf_size)
 {
+#if 0
     SLIRP *slirp = (SLIRP *) calloc(1, sizeof(*slirp));
     char *targs = strdup(args);
     const char *tptr = targs;
@@ -384,6 +386,7 @@ SLIRP *sim_slirp_open(const char *args, void *opaque, packet_callback callback, 
     }
     free(targs);
     return slirp;
+#endif
 }
 
 void sim_slirp_close(SLIRP *slirp)
