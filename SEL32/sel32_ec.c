@@ -1868,7 +1868,7 @@ t_stat ec_attach(UNIT* uptr, CONST char* cptr)
 
     eth_copy_mac(ec_data.macs[0], ec_data.mac);
     eth_copy_mac(ec_data.macs[1], broadcast_ethaddr);
-    status = eth_open(&ec_data.etherface, cptr, &ec_dev, DEBUG_ETHER);
+    status = eth_open(&ec_data.etherface, cptr, &ec_dev, ec_dev.dctrl & DEBUG_ETHER);
     if (status != SCPE_OK) {
         free(tptr);
         return status;

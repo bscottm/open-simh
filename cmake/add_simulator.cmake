@@ -24,8 +24,10 @@ add_custom_target(update_sim_commit ALL
 ## Simulator sources and library:
 set(SIM_SOURCES
     ${CMAKE_SOURCE_DIR}/scp.c
+    ${CMAKE_SOURCE_DIR}/sim_atomic.c
     ${CMAKE_SOURCE_DIR}/sim_card.c
     ${CMAKE_SOURCE_DIR}/sim_console.c
+    ${CMAKE_SOURCE_DIR}/sim_debtab.c
     ${CMAKE_SOURCE_DIR}/sim_disk.c
     ${CMAKE_SOURCE_DIR}/sim_ether.c
     ${CMAKE_SOURCE_DIR}/sim_fio.c
@@ -36,11 +38,19 @@ set(SIM_SOURCES
     ${CMAKE_SOURCE_DIR}/sim_tape.c
     ${CMAKE_SOURCE_DIR}/sim_timer.c
     ${CMAKE_SOURCE_DIR}/sim_tmxr.c
-    ${CMAKE_SOURCE_DIR}/sim_video.c)
+    ${CMAKE_SOURCE_DIR}/sim_video.c
+    ${CMAKE_SOURCE_DIR}/sim_debtab.c)
 
 set(SIM_VIDEO_SOURCES
     ${CMAKE_SOURCE_DIR}/display/display.c
     ${CMAKE_SOURCE_DIR}/display/sim_ws.c)
+
+if (WITH_NETWORK AND WITH_SLIRP)
+    list(APPEND SIM_SOURCES
+            sim_slirp/sim_slirp.c
+            sim_slirp/slirp_poll.c
+    )
+endif ()
 
 ## Build a simulator core library, with and without AIO support. The AIO variant
 ## has "_aio" appended to its name, e.g., "simhz64_aio" or "simhz64_video_aio".
@@ -57,15 +67,37 @@ function(build_simcore _targ)
     # don't export out to the dependencies (hence PRIVATE.)
     foreach (lib IN ITEMS "${_targ}" "${sim_aio_lib}")
         set_target_properties(${lib} PROPERTIES
-            C_STANDARD 99
             EXCLUDE_FROM_ALL True
         )
+
+        if (TARGET_WINVER)
+            target_compile_definitions(${lib} PUBLIC WINVER=${TARGET_WINVER} _WIN32_WINNT=${TARGET_WINVER})
+        endif ()
+
         target_compile_definitions(${lib} PRIVATE USE_SIM_CARD USE_SIM_IMD)
         target_compile_options(${lib} PRIVATE ${EXTRA_TARGET_CFLAGS})
+
+        if (WITH_NETWORK AND WITH_SLIRP)
+            target_compile_definitions(
+                ${lib}
+                PUBLIC
+                    HAVE_SLIRP_NETWORK
+                    LIBSLIRP_STATIC
+            )
+
+            if (HAVE_INET_PTON)
+                ## libslirp detects HAVE_INET_PTON for us.
+                target_compile_definitions(${lib} PUBLIC HAVE_INET_PTON)
+            endif()
+        endif ()    
+
         target_link_options(${lib} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
         # Make sure that the top-level directory is part of the libary's include path:
         target_include_directories("${lib}" PUBLIC "${CMAKE_SOURCE_DIR}")
+
+        # And optional sanitizers...
+        add_sanitizers(${_targ})
 
         if (SIMH_INT64)
             target_compile_definitions(${lib} PUBLIC USE_INT64)
@@ -195,11 +227,11 @@ function (simh_executable_template _targ)
 
     add_executable("${_targ}" "${SIMH_SOURCES}")
     set_target_properties(${_targ} PROPERTIES
-        C_STANDARD 99
         RUNTIME_OUTPUT_DIRECTORY ${SIMH_LEGACY_INSTALL}
     )
     target_compile_options(${_targ} PRIVATE ${EXTRA_TARGET_CFLAGS})
     target_link_options(${_targ} PRIVATE ${EXTRA_TARGET_LFLAGS})
+    add_sanitizers(${_targ})
 
     if (MINGW)
         ## target_compile_options(${_targ} PUBLIC "-fms-extensions")
