@@ -3723,11 +3723,11 @@ static int tmxr_open_device_count = 0;
 pthread_t           sim_tmxr_poll_thread;          /* Polling Thread Id */
 #if defined(_WIN32) || defined(VMS)
 pthread_t           sim_tmxr_serial_poll_thread;   /* Serial Polling Thread Id */
-pthread_cond_t      sim_tmxr_serial_startup_cond;
+pthread_cond_t      sim_tmxr_serial_startup_cond = PTHREAD_COND_INITIALIZER;
 #endif
-pthread_mutex_t     sim_tmxr_poll_lock;
-pthread_cond_t      sim_tmxr_poll_cond;
-pthread_cond_t      sim_tmxr_startup_cond;
+pthread_mutex_t     sim_tmxr_poll_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t      sim_tmxr_poll_cond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t      sim_tmxr_startup_cond = PTHREAD_COND_INITIALIZER;
 int32               sim_tmxr_poll_count = 0;
 t_bool              sim_tmxr_poll_running = FALSE;
 
