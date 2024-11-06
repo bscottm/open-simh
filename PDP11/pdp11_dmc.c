@@ -95,6 +95,9 @@ The other test was to configure DECnet on VMS 4.6 and do SET HOST.
 
 // TODO: Test MOP.
 
+/* Pull in the DDCMP packet functions */
+#define DDCMP_PACKET_FUNCTIONS
+
 #if defined (VM_PDP10)                                  /* PDP10 version */
 #include "pdp10_defs.h"
 

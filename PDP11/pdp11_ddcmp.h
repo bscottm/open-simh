@@ -380,6 +380,7 @@ else {/* Packet eaten, so discard it */
 return lp->conn ? SCPE_OK : SCPE_LOST;
 }
 
+#if defined(DDCMP_PACKET_FUNCTIONS)
 static t_stat ddcmp_tmxr_put_packet_crc_ln (TMLN *lp, uint8 *buf, size_t size, int32 corruptrate)
 {
 uint16 hdr_crc16 = ddcmp_crc16(0, buf, DDCMP_HEADER_SIZE-DDCMP_CRC_SIZE);
@@ -431,63 +432,76 @@ buf[4] = sndr;                      /* SNDR */
 buf[5] = 1;                         /* ADDR */
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_control_packet_ln (TMLN *lp, uint8 *buf, uint8 type, uint8 subtype, uint8 flags, uint8 sndr, uint8 rcvr)
 {
 ddcmp_build_control_packet (buf, type, subtype, flags, sndr, rcvr);
 return ddcmp_tmxr_put_packet_crc_ln (lp, buf, DDCMP_HEADER_SIZE, 0);
 }
+#endif
 
 static void ddcmp_build_ack_packet (uint8 *buf, uint8 ack, uint8 flags)
 {
 ddcmp_build_control_packet (buf, DDCMP_CTL_ACK, 0, flags, 0, ack);
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_ack_packet_ln (TMLN *lp, uint8 *buf, uint8 ack, uint8 flags)
 {
 ddcmp_build_ack_packet (buf, ack, flags);
 return ddcmp_tmxr_put_packet_crc_ln (lp, buf, DDCMP_HEADER_SIZE, 0);
 }
+#endif
 
 static void ddcmp_build_nak_packet (uint8 *buf, uint8 reason, uint8 nack, uint8 flags)
 {
 ddcmp_build_control_packet (buf, DDCMP_CTL_NAK, reason, flags, 0, nack);
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_nak_packet_ln (TMLN *lp, uint8 *buf, uint8 reason, uint8 nack, uint8 flags)
 {
 return ddcmp_tmxr_put_control_packet_ln (lp, buf, DDCMP_CTL_NAK, reason, flags, 0, nack);
 }
+#endif
 
 static void ddcmp_build_rep_packet (uint8 *buf, uint8 ack, uint8 flags)
 {
 ddcmp_build_control_packet (buf, DDCMP_CTL_REP, 0, flags, ack, 0);
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_rep_packet_ln (TMLN *lp, uint8 *buf, uint8 ack, uint8 flags)
 {
 return ddcmp_tmxr_put_control_packet_ln (lp, buf, DDCMP_CTL_REP, 0, flags, ack, 0);
 }
+#endif
 
 static void ddcmp_build_start_packet (uint8 *buf)
 {
 ddcmp_build_control_packet (buf, DDCMP_CTL_STRT, 0, DDCMP_FLAG_SELECT|DDCMP_FLAG_QSYNC, 0, 0);
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_start_packet_ln (TMLN *lp, uint8 *buf)
 {
 ddcmp_build_start_packet (buf);
 return ddcmp_tmxr_put_packet_crc_ln (lp, buf, DDCMP_HEADER_SIZE, 0);
 }
+#endif
 
 static void ddcmp_build_start_ack_packet (uint8 *buf)
 {
 ddcmp_build_control_packet (buf, DDCMP_CTL_STACK, 0, DDCMP_FLAG_SELECT|DDCMP_FLAG_QSYNC, 0, 0);
 }
 
+#if 0
 static t_stat ddcmp_tmxr_put_start_ack_packet_ln (TMLN *lp, uint8 *buf)
 {
 ddcmp_build_start_ack_packet (buf);
 return ddcmp_tmxr_put_packet_crc_ln (lp, buf, DDCMP_HEADER_SIZE, 0);
 }
+#endif
+#endif
 
 #endif /* PDP11_DDCMP_H_ */

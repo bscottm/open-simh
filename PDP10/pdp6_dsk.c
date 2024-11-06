@@ -260,7 +260,7 @@ dsk_svc (UNIT *uptr)
    int           ctlr  = (dsk_addr >> 16) & 03;
    int           cyl;
    int           sec;
-   int           wc;
+   size_t        wc;
    uint64        data;
    DEVICE       *dptr;
 

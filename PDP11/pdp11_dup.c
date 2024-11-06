@@ -108,8 +108,8 @@ static t_stat dup_detach (UNIT *uptr);
 static t_stat dup_clear (int32 dup, t_bool flag);
 static int32 dup_rxinta (void);
 static int32 dup_txinta (void);
-static void dup_update_rcvi (void);
-static void dup_update_xmti (void);
+/* Not defined: static void dup_update_rcvi (void); */
+/* Not defined: static void dup_update_xmti (void); */
 static void dup_clr_rxint (int32 dup);
 static void dup_set_rxint (int32 dup);
 static void dup_clr_txint (int32 dup);
