@@ -127,15 +127,16 @@ SOCKET sim_connect_sock_ex (const char *sourcehostport, const char *hostport, co
 #define sim_connect_sock(hostport, default_host, default_port) sim_connect_sock_ex(NULL, hostport, default_host, default_port, SIM_SOCK_OPT_BLOCKING)
 SOCKET sim_accept_conn_ex (SOCKET master, char **connectaddr, int opt_flags);
 #define sim_accept_conn(master, connectaddr) sim_accept_conn_ex(master, connectaddr, 0)
-int sim_check_conn (SOCKET sock, int rd);
-int sim_read_sock (SOCKET sock, char *buf, int nbytes);
-int sim_write_sock (SOCKET sock, const char *msg, int nbytes);
-void sim_close_sock (SOCKET sock);
-const char *sim_get_err_sock (const char *emsg);
-SOCKET sim_err_sock (SOCKET sock, const char *emsg);
-int sim_getnames_sock (SOCKET sock, char **socknamebuf, char **peernamebuf);
-void sim_init_sock (void);
-void sim_cleanup_sock (void);
+
+int sim_check_conn(SOCKET sock, int rd);
+ssize_t sim_read_sock(SOCKET sock, char *buf, size_t nbytes);
+size_t sim_write_sock(SOCKET sock, const char *msg, size_t nbytes);
+void sim_close_sock(SOCKET sock);
+const char *sim_get_err_sock(const char *emsg);
+SOCKET sim_err_sock(SOCKET sock, const char *emsg);
+int sim_getnames_sock(SOCKET sock, char **socknamebuf, char **peernamebuf);
+void sim_init_sock(void);
+void sim_cleanup_sock(void);
 
 #ifdef  __cplusplus
 }

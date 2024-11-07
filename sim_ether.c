@@ -912,11 +912,11 @@ t_stat eth_show (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
     }
   if (eth_open_device_count) {
     int i;
-    char desc[ETH_DEV_DESC_MAX], *d;
+    char eth_desc[ETH_DEV_DESC_MAX], *d;
 
     fprintf(st,"Open ETH Devices:\n");
     for (i=0; i<eth_open_device_count; i++) {
-      d = eth_getdesc_byname(eth_open_devices[i]->name, desc);
+      d = eth_getdesc_byname(eth_open_devices[i]->name, eth_desc);
       if (d)
         fprintf(st, " %-7s%s (%s)\n", eth_open_devices[i]->dptr->name, eth_open_devices[i]->dptr->units[0].filename, d);
       else
@@ -2073,7 +2073,7 @@ while (dev->handle) {
           u_char buf[ETH_MAX_JUMBO_FRAME];
 
           memset(&header, 0, sizeof(header));
-          len = (int)sim_read_sock (select_fd, (char *)buf, (int32)sizeof(buf));
+          len = (int)sim_read_sock (select_fd, (char *)buf, sizeof(buf));
           if (len > 0) {
             status = 1;
             header.caplen = header.len = len;
@@ -2245,8 +2245,10 @@ if (bufsz < ETH_MAX_JUMBO_FRAME)
 /* attempt to connect device */
 memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 if (0 == strncmp("tap:", savname, 4)) {
+#if defined(HAVE_TAP_NETWORK)
   int  tun = -1;    /* TUN/TAP Socket */
   int  on = 1;
+#endif
   const char *devname = savname + 4;
 
   while (isspace(*devname))

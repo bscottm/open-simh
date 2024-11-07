@@ -46,6 +46,14 @@
 extern "C" {
 #endif
 
+#if !defined(_WIN32)
+#include <sys/types.h>
+#else
+/* sim_defs.h defines this typedef, but we can't include it here. */
+#include <basetsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 #include "sim_sock.h"
 
 #include "sim_frontpanel.h"
@@ -2758,8 +2766,6 @@ status = _panel_vsendf_completion (p, NULL, response, completion, fmt, arglist);
 va_end (arglist);
 return status;
 }
-
-
 #ifdef  __cplusplus
 }
 #endif

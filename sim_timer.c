@@ -678,8 +678,10 @@ static void _double_to_timespec (struct timespec *time, double dtime);
 static t_bool _rtcn_tick_catchup_check (RTC *rtc, int32 time);
 static void _rtcn_configure_calibrated_clock (int32 newtmr);
 static t_bool _sim_coschedule_cancel (UNIT *uptr);
+#if defined(SIM_ASYNCH_CLOCKS)
 static t_bool _sim_wallclock_cancel (UNIT *uptr);
 static t_bool _sim_wallclock_is_active (UNIT *uptr);
+#endif
 static void _sim_timer_adjust_cal(void);
 t_stat sim_timer_show_idle_mode (FILE* st, UNIT* uptr, int32 val, CONST void *  desc);
 

@@ -46,6 +46,7 @@
 extern "C" {
 #endif
 
+#include "sim_defs.h"
 #include "sim_sock.h"
 #include <signal.h>
 #include <stdio.h>
@@ -110,7 +111,7 @@ SOCKET sim_accept_conn (SOCKET master, char **connectaddr);
 return INVALID_SOCKET;
 }
 
-int sim_read_sock (SOCKET sock, char *buf, int nbytes)
+int sim_read_sock (SOCKET sock, char *buf, size_t nbytes)
 {
 return -1;
 }
@@ -206,6 +207,43 @@ typedef size_t socklen_t;
 typedef int (WSAAPI *getnameinfo_func) (const struct sockaddr *sa, socklen_t salen, char *host, size_t hostlen, char *serv, size_t servlen, int flags);
 static getnameinfo_func p_getnameinfo;
 
+
+/* Convert IP address to its printable format. Supports IPv6. */ 
+static const char *sim_inet_ntoa(int family, const void *addr)
+{
+#if defined(AF_INET6)
+    static char fmt_address[48];
+
+    inet_ntop(family, addr, fmt_address, sizeof(fmt_address) - 1);
+    return fmt_address;
+#else
+    GLIB_UNUSED_PARAM(family);
+
+    return inet_ntoa(*addr);
+#endif
+}
+
+/* Convert IPv4 address to printable format. */
+const char *sim_inet_ntoa4(const struct in_addr *v4addr)
+{
+    return sim_inet_ntoa(AF_INET, v4addr);
+}
+
+/* Convert IPv6 address to printable format. */
+#if defined(AF_INET6)
+const char *sim_inet_ntoa6(const struct in6_addr *v6addr)
+{
+    return sim_inet_ntoa(AF_INET6, v6addr);
+}
+#else
+const char *sim_inet_ntoa6(const void *v6addr)
+{
+    return "IPv6 not supported";
+}
+#endif
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+
 static void    WSAAPI s_freeaddrinfo (struct addrinfo *ai)
 {
 struct addrinfo *a, *an;
@@ -217,6 +255,25 @@ for (a=ai; a != NULL; a=an) {
     free (a);
     }
 }
+
+static unsigned long sim_inet_aton(const char *addr)
+{
+#if defined(AF_INET6)
+    unsigned long inet_addr;
+    int ret;
+
+    ret = inet_pton(AF_INET, addr, &inet_addr);
+    return (ret > 0 ? inet_addr : INADDR_NONE);
+#else
+    return inet_aton(addr);
+#endif
+}
+
+#if defined(_MSC_VER)
+/* SIMH defines a stub that uses deprecated functions, so squelch the
+ * warnings. */
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
 
 static int     WSAAPI s_getaddrinfo (const char *hostname,
                                      const char *service,
@@ -281,7 +338,7 @@ if (service) {
     }
 
 if (hostname) {
-    if ((0xffffffff != (ipaddr.s_addr = inet_addr(hostname))) || 
+    if ((INADDR_NONE != (ipaddr.s_addr = sim_inet_aton(hostname))) || 
         (0 == strcmp("255.255.255.255", hostname))) {
         fixed[0] = &ipaddr;
         fixed[1] = NULL;
@@ -419,15 +476,17 @@ if ((host) && (hostlen > 0)) {
     else {
         if (flags & NI_NAMEREQD)
             return EAI_NONAME;
-        if (hostlen < strlen(inet_ntoa(sin->sin_addr))+1)
+        if (hostlen < strlen(sim_inet_ntoa4(&sin->sin_addr))+1)
             return EAI_OVERFLOW;
-        strcpy(host, inet_ntoa(sin->sin_addr));
+        strcpy(host, sim_inet_ntoa4(&sin->sin_addr));
         }
     }
 return 0;
 }
 
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_MSC_VER)
+#undef _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
 
 #if !defined(IPV6_V6ONLY)           /* Older XP environments may not define IPV6_V6ONLY */
 #define IPV6_V6ONLY           27    /* Treat wildcard bind as AF_INET6-only. */
@@ -737,7 +796,7 @@ status = -1;
 while ((*acl != '\0') && !done) {
     struct addrinfo *ai_rule, *ai, *aiv;
     int permit; 
-    unsigned long bits = 0;
+    unsigned long acl_bits = 0;
     const char *cc;
     char *c,*c1, rule[260];
 
@@ -757,8 +816,8 @@ while ((*acl != '\0') && !done) {
     acl += strlen (rule) + 1 + (cc != NULL);
     c = strchr (rule, '/');
     if (c != NULL) {
-        bits = strtoul (c + 1, &c1, 10);
-        if ((bits == 0) || (bits > 128) || (*c1 != '\0'))
+        acl_bits = strtoul (c + 1, &c1, 10);
+        if ((acl_bits == 0) || (acl_bits > 128) || (*c1 != '\0'))
             break;
         *c = '\0';
         }
@@ -796,15 +855,15 @@ while ((*acl != '\0') && !done) {
                         }
                     }
     #endif
-                if (bits == 0)          /* Bits not specified? */
-                    bits = addr_bits;   /* Use them all */
-                for (bit=0; (bit < bits) && (bit < addr_bits); bit++) {
+                if (acl_bits == 0)          /* Bits not specified? */
+                    acl_bits = addr_bits;   /* Use them all */
+                for (bit=0; (bit < acl_bits) && (bit < addr_bits); bit++) {
                     unsigned int bitmask = 1 << (7 - (bit & 7));
 
                     if ((da[bit>>3] & bitmask) != (dav[bit>>3] & bitmask))
                         break;
                     }
-                if (bit == bits) {  /* All desired bits matched? */
+                if (bit == acl_bits) {  /* All desired bits matched? */
                     done = 1;
                     status = permit ? 0 : -1;
                     break;
@@ -870,7 +929,6 @@ if ((hostp != NULL) && ((hostp[1] == '[') || (NULL != strchr (hostp+1, ':')))) {
     }
 return sim_parse_addr (cptr, host, hostlen, default_host, port, port_len, default_port, NULL);
 }
-
 
 void sim_init_sock (void)
 {
@@ -1064,19 +1122,19 @@ if (newsock == INVALID_SOCKET) {                        /* socket error? */
 #ifdef IPV6_V6ONLY
 if (preferred->ai_family == AF_INET6) {
     int off = 0;
-    sta = setsockopt (newsock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&off, sizeof(off));
+    setsockopt (newsock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&off, sizeof(off));
     }
 #endif
 if (opt_flags & SIM_SOCK_OPT_REUSEADDR) {
     int on = 1;
 
-    sta = setsockopt (newsock, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
+    setsockopt (newsock, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
     }
 #if defined (SO_EXCLUSIVEADDRUSE)
 else {
     int on = 1;
 
-    sta = setsockopt (newsock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&on, sizeof(on));
+    setsockopt (newsock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&on, sizeof(on));
     }
 #endif
 sta = bind (newsock, preferred->ai_addr, preferred->ai_addrlen);
@@ -1367,9 +1425,10 @@ return 0;
 }
 
 
-int sim_read_sock (SOCKET sock, char *buf, int nbytes)
+ssize_t sim_read_sock (SOCKET sock, char *buf, size_t nbytes)
 {
-int rbytes, err;
+ssize_t rbytes;
+int err;
 
 rbytes = recv (sock, buf, nbytes, 0);
 if (rbytes == 0)                                        /* disconnect */
@@ -1394,7 +1453,7 @@ if (rbytes == SOCKET_ERROR) {
 return rbytes;
 }
 
-int sim_write_sock (SOCKET sock, const char *msg, int nbytes)
+size_t sim_write_sock (SOCKET sock, const char *msg, size_t nbytes)
 {
 int err, sbytes = send (sock, msg, nbytes, 0);
 

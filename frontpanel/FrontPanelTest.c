@@ -38,6 +38,7 @@
 #include <string.h>
 #include "sim_frontpanel.h"
 #include <signal.h>
+#include <stdarg.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -841,4 +842,59 @@ sim_panel_destroy (panel);
 
 /* Get rid of pseudo config file created earlier */
 (void)remove (sim_config);
+}
+
+
+/* Stub sim_printf() for sim_sock. */
+
+#if defined(sim_printf)
+#undef sim_printf
+#endif
+
+#if !defined(STACKBUFSIZE)
+#define STACKBUFSIZE 256
+#endif
+
+void sim_printf (const char* fmt, ...)
+{
+char stackbuf[STACKBUFSIZE];
+size_t bufsize = sizeof(stackbuf);
+char *buf = stackbuf;
+int len;
+va_list arglist;
+
+while (1) {                                         /* format passed string, args */
+    va_start (arglist, fmt);
+#if defined(NO_vsnprintf)
+    len = vsprintf (buf, fmt, arglist);
+#else                                               /* !defined(NO_vsnprintf) */
+    len = vsnprintf (buf, bufsize-1, fmt, arglist);
+#endif                                              /* NO_vsnprintf */
+    va_end (arglist);
+
+/* If the formatted result didn't fit into the buffer, then grow the buffer and try again */
+
+    if ((len > 0) && ((size_t) len >= bufsize - 1)) {
+        if (buf != stackbuf)
+            free (buf);
+        bufsize = bufsize * 2;
+        if (bufsize < (size_t) (len + 2))
+            bufsize = (size_t) (len + 2);
+        buf = (char *) malloc (bufsize);
+        if (buf == NULL)                            /* out of memory */
+            return;
+        buf[bufsize-1] = '\0';
+        continue;
+        }
+    else if (len < 0) {
+        /* Output error. Dubious as to whether this really happens with
+         * vsprintf() or vsprintf(). */
+        return;
+        }
+    break;
+    }
+
+    fputs(buf, stdout);
+    fputc('\n', stdout);
+    fflush(stdout);
 }

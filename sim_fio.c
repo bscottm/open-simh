@@ -378,6 +378,9 @@ filelist = (char **)realloc (filelist, (listcount + 2) * sizeof (*filelist));
 filelist[listcount] = strdup (FullPath);
 filelist[listcount + 1] = NULL;
 *(char ***)context = filelist;
+/* Squelch unused parameter warning. */
+(void) FileSize;
+(void) filestat;
 }
 
 char **sim_get_filelist (const char *filename)
@@ -615,6 +618,7 @@ return _chsize(_fileno(fptr), (long)size);
 
 int sim_set_fifo_nonblock (FILE *fptr)
 {
+(void) fptr;
 return -1;
 }
 

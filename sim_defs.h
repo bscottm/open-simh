@@ -157,6 +157,15 @@ extern int sim_vax_snprintf(char *buf, size_t buf_size, const char *fmt, ...);
 #undef ERROR                        /* avoid macro name collision */
 #undef MEM_MAPPED                   /* avoid macro name collision */
 #include <process.h>
+
+#if defined(_MSC_VER)
+/* Disable unreferenced formal parameter warnings (4100) */
+#pragma warning(disable: 4100)
+#endif
+
+/* Note: MinGW has this all lower case. */
+#include <basetsd.h>
+typedef SSIZE_T ssize_t;
 #endif
 
 #ifdef USE_REGEX

@@ -656,6 +656,9 @@ if ((pc == 0xA) || (pc == 0x3F)) {
     bus->buf[bus->buf_b++] = 0;
     bus->buf[bus->buf_b++] = 0;
     }
+
+/* Squelch set-but-not-used warnings */
+(void) pctl;
 }
 
 /* Command - Mode Sense (6 byte command) */
@@ -692,6 +695,9 @@ bus->buf[0] = bus->buf_b - 1;                           /* mode data length */
 scsi_check_alloc (bus, data[4]);                        /* check allocation */
 scsi_set_phase (bus, SCSI_DATI);
 scsi_set_req (bus);                                     /* request to send data */
+
+/* Squelch set-but-not-used warnings */
+(void) pctl;
 }
 
 /* Command - Mode Sense (10 byte command) */
@@ -727,6 +733,9 @@ PUTW (bus->buf, 0, (bus->buf_b - 1));                   /* mode data length */
 scsi_check_alloc (bus, GETW (data, 7));                 /* check allocation */
 scsi_set_phase (bus, SCSI_DATI);
 scsi_set_req (bus);                                     /* request to send data */
+
+/* Squelch set-but-not-used warnings */
+(void) pctl;
 }
 
 /* Command - Start/Stop Unit */
@@ -794,6 +803,9 @@ else {
 bus->buf_b = (sectsread * dev->block_size);
 scsi_set_phase (bus, SCSI_DATI);                        /* data in phase next */
 scsi_set_req (bus);                                     /* request to send data */
+
+/* Squelch set-but-not-used warnings */
+(void) r;
 }
 
 /* Command - Read (6 byte command), tape version */
@@ -934,6 +946,9 @@ else {
 bus->buf_b = (sectsread * dev->block_size);
 scsi_set_phase (bus, SCSI_DATI);                        /* data in phase next */
 scsi_set_req (bus);                                     /* request to send data */
+
+/* Squelch set-but-not-used warnings */
+(void) r;
 }
 
 /* Command - Read Long */
@@ -961,6 +976,9 @@ else {
 bus->buf_b = sects;
 scsi_set_phase (bus, SCSI_DATI);                        /* data in phase next */
 scsi_set_req (bus);                                     /* request to send data */
+
+/* Squelch set-but-not-used warnings */
+(void) r;
 }
 
 /* Command - Write (6 byte command), disk version */
@@ -994,6 +1012,9 @@ else if (bus->phase == SCSI_DATO) {
     memset (&bus->cmd[0], 0, 10);
     scsi_status (bus, STS_OK, KEY_OK, ASC_OK);
     }
+
+/* Squelch set-but-not-used warnings */
+(void) r;
 }
 
 /* Command - Write (6 byte command), tape version */
@@ -1067,6 +1088,9 @@ else if (bus->phase == SCSI_DATO) {
     memset (&bus->cmd[0], 0, 10);
     scsi_status (bus, STS_OK, KEY_OK, ASC_OK);
     }
+
+/* Squelch set-but-not-used warnings */
+(void) r;
 }
 
 /* Command - Erase */

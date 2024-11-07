@@ -852,8 +852,8 @@ static t_stat cmd_show (int32 num, CONST char *cptr)
 
     len = strlen (gbuf);
     if (strncmp ("STATISTICS", gbuf, len) == 0) {
-        sprintf (gbuf, "line %d: input queued/total = %d/%d, "
-                 "output queued/total = %d/%d\r\n", num,
+        sprintf (gbuf, "line %d: input queued/total = %" SIM_PRIssize_t "/%" SIM_PRIsize_t ", "
+                 "output queued/total = %" SIM_PRIssize_t "/%" SIM_PRIsize_t "\r\n", num,
                  t->rxbpi - t->rxbpr, t->rxcnt,
                  t->txbpi - t->txbpr, t->txcnt);
         tmxr_linemsg (t, gbuf);

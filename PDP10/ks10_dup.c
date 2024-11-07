@@ -1035,7 +1035,7 @@ for (dup=active=attached=0; dup < dup_desc.lines; dup++) {
         ++active;
     dup_get_modem (dup);
     if (lp->xmte && tmxr_tpbusyln(lp)) {
-        sim_debug(DBG_PKT, DUPDPTR, "dup_poll_svc(dup=%d) - Packet Transmission of remaining %d bytes restarting...\n", dup, tmxr_tpqln (lp));
+        sim_debug(DBG_PKT, DUPDPTR, "dup_poll_svc(dup=%d) - Packet Transmission of remaining %" SIM_PRIssize_t " bytes restarting...\n", dup, tmxr_tpqln (lp));
         dup_svc (&dup_units[dup]);              /* Flush pending output */
         }
     if (!(dup_rxcsr[dup] & RXCSR_M_RXACT)) {

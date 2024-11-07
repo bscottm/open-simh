@@ -891,7 +891,7 @@ switch (MT_GET_FMT (uptr)) {
         if (uptr->recsize == 0)
             uptr->recsize = TAR_DFLT_RECSIZE;           /* Apply default block size */
         if ((uptr->recsize % 512) != 0)
-            return sim_messagef (SCPE_ARG, "TAR format block size of %" SIZE_T_FMT "u is not a multiple of 512\n", uptr->recsize);
+            return sim_messagef (SCPE_ARG, "TAR format block size of %" SIM_PRIsize_t " is not a multiple of 512\n", uptr->recsize);
         sim_switches |= SWMASK ('E');                   /* The TAR file must exist */
         /* fall through */
     default:
@@ -3641,7 +3641,7 @@ if (!stop_cpu) {            /* if SIGINT didn't interrupt the scan */
     if ((r != MTSE_EOM) || (sim_switches & SWMASK ('V')) || (sim_switches & SWMASK ('L')) ||
         (remaining_data > 0) ||
         (unique_record_sizes > 2 * tapemark_total)) {
-        sim_messagef (SCPE_OK, "%s %" SIZE_T_FMT "u bytes of tape data (%u record%s, %u tapemark%s)\n",
+        sim_messagef (SCPE_OK, "%s %" SIM_PRIsize_t " bytes of tape data (%u record%s, %u tapemark%s)\n",
                                (r != MTSE_EOM) ? "After processing" : "contains", data_total,
                                record_total, (record_total == 1) ? "" : "s",
                                tapemark_total, (tapemark_total == 1) ? "" : "s");
@@ -3999,7 +3999,7 @@ for (i=0; i<files; i++) {
     for (j=0; j < (size_t) records; j++) {
         awsrec_typ = AWS_REC;
         if (sim_switches & SWMASK ('V'))
-            sim_printf ("Writing %" SIZE_T_FMT "u byte record\n", rec_size);
+            sim_printf ("Writing %" SIM_PRIsize_t " byte record\n", rec_size);
         for (k=0; k<rec_size; k++)
             buf[k] = rand () & 0xFF;
         (void)sim_fwrite (&mtrlnt,       sizeof (mtrlnt),       1, fSIMH);

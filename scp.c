@@ -3817,19 +3817,20 @@ if (*cptr) {
         if ((cmdp = find_cmd (gbuf))) {
             if (*cptr) {
                 if ((cmdp->action == &set_cmd) || (cmdp->action == &show_cmd)) {
-                    DEVICE *dptr;
-                    UNIT *uptr;
-                    t_stat r;
+                    DEVICE *aux_dptr;
+                    UNIT *aux_uptr;
 
                     cptr = get_glyph (cptr, gbuf, 0);
-                    dptr = find_unit (gbuf, &uptr);
-                    if (dptr == NULL)
-                        dptr = find_dev (gbuf);
-                    if (dptr != NULL) {
-                        r = help_dev_help (stdout, dptr, uptr, flag, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
+                    aux_dptr = find_unit (gbuf, &aux_uptr);
+                    if (aux_dptr == NULL)
+                        aux_dptr = find_dev (gbuf);
+                    if (aux_dptr != NULL) {
+                        t_stat s;
+
+                        s = help_dev_help (stdout, aux_dptr, aux_uptr, flag, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
                         if (sim_log && (!sim_oline))
-                            help_dev_help (sim_log, dptr, uptr, flag | SCP_HELP_FLAT, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
-                        return r;
+                            help_dev_help (sim_log, aux_dptr, aux_uptr, flag | SCP_HELP_FLAT, (cmdp->action == &set_cmd) ? "SET" : "SHOW");
+                        return s;
                         }
                     if (cmdp->action == &set_cmd) { /* HELP SET xxx (not device or unit) */
                         if ((cmdp = find_ctab (set_glob_tab, gbuf)) &&
@@ -3848,28 +3849,28 @@ if (*cptr) {
                 }
             if (cmdp->help) {
                 if (strcmp (cmdp->name, "HELP") == 0) {
-                    DEVICE *dptr;
+                    DEVICE *aux_dptr;
                     int i;
 
-                    for (i = 0; (dptr = sim_devices[i]) != NULL; i++) {
-                        if (dptr->help)
-                            sim_printf ("h{elp} %-17s display help for device %s\n", dptr->name, dptr->name);
-                        if (dptr->attach_help ||
-                            (DEV_TYPE(dptr) == DEV_MUX) ||
-                            (DEV_TYPE(dptr) == DEV_DISK) ||
-                            (DEV_TYPE(dptr) == DEV_TAPE)) {
-                            sim_printf ("h{elp} %s ATTACH\t display help for device %s ATTACH command\n", dptr->name, dptr->name);
+                    for (i = 0; (aux_dptr = sim_devices[i]) != NULL; i++) {
+                        if (aux_dptr->help)
+                            sim_printf ("h{elp} %-17s display help for device %s\n", aux_dptr->name, aux_dptr->name);
+                        if (aux_dptr->attach_help ||
+                            (DEV_TYPE(aux_dptr) == DEV_MUX) ||
+                            (DEV_TYPE(aux_dptr) == DEV_DISK) ||
+                            (DEV_TYPE(aux_dptr) == DEV_TAPE)) {
+                            sim_printf ("h{elp} %s ATTACH\t display help for device %s ATTACH command\n", aux_dptr->name, aux_dptr->name);
                             }
-                        if (dptr->registers) {
-                            if (dptr->registers->name != NULL)
-                                sim_printf ("h{elp} %s REGISTERS\t display help for device %s register variables\n", dptr->name, dptr->name);
+                        if (aux_dptr->registers) {
+                            if (aux_dptr->registers->name != NULL)
+                                sim_printf ("h{elp} %s REGISTERS\t display help for device %s register variables\n", aux_dptr->name, aux_dptr->name);
                             }
-                        if (dptr->modifiers) {
+                        if (aux_dptr->modifiers) {
                             MTAB *mptr;
 
-                            for (mptr = dptr->modifiers; mptr->pstring != NULL; mptr++) {
+                            for (mptr = aux_dptr->modifiers; mptr->pstring != NULL; mptr++) {
                                 if (mptr->help) {
-                                    sim_printf ("h{elp} %s SET\t\t display help for device %s SET commands (modifiers)\n", dptr->name, dptr->name);
+                                    sim_printf ("h{elp} %s SET\t\t display help for device %s SET commands (modifiers)\n", aux_dptr->name, aux_dptr->name);
                                     break;
                                     }
                                 }
@@ -4055,7 +4056,7 @@ return cbuf;
 t_stat do_cmd_label (int32 flag, CONST char *fcptr, CONST char *label)
 {
 char cbuf[4*CBUFSIZE], gbuf[CBUFSIZE], abuf[4*CBUFSIZE], quote, *c, *do_arg[11];
-CONST char *cptr;
+CONST char *cptr = NULL;
 FILE *fpin = NULL;
 CTAB *cmdp = NULL;
 int32 echo, nargs, errabort, i;
@@ -4557,9 +4558,10 @@ int i;
 const char *ap;
 const char *fixup_needed = strchr (gbuf, ':');
 char *tgbuf = NULL;
-size_t tgbuf_size = MAX(rbuf_size, 1 + (size_t)(fixup_needed - gbuf));
+size_t tgbuf_size = rbuf_size;
 
-if (fixup_needed) {
+if (fixup_needed != NULL) {
+    tgbuf_size = MAX(rbuf_size, 1 + (size_t) (fixup_needed - gbuf));
     tgbuf = (char *)calloc (tgbuf_size, 1);
     memcpy (tgbuf, gbuf, (fixup_needed - gbuf));
     gbuf = tgbuf;
@@ -5087,10 +5089,11 @@ t_bool Exist = FALSE;
 t_bool result;
 t_addr addr = 0;
 t_stat reason;
+const size_t invalid_boolop = (size_t) -1;
 
 cptr = (CONST char *)get_sim_opt (CMD_OPT_SW|CMD_OPT_DFT, (CONST char *)cptr, &r);
                                                         /* get sw, default */
-sim_stabr.boolop = sim_staba.boolop = -1;               /* no relational op dflt */
+sim_stabr.boolop = sim_staba.boolop = invalid_boolop;   /* no relational op dflt */
 if (*cptr == 0)                                         /* must be more */
     return SCPE_2FARG;
 if ((flag != 1) && (sim_cptr_is_action[sim_do_depth]))
@@ -6779,7 +6782,7 @@ if (flag) {
 #elif defined(_WIN32)
     if (1) {
         char *proc_id = getenv ("PROCESSOR_IDENTIFIER");
-        char *arch = getenv ("PROCESSOR_ARCHITECTURE");
+        char *proc_arch = getenv ("PROCESSOR_ARCHITECTURE");
         char *procs = getenv ("NUMBER_OF_PROCESSORS");
         char *proc_level = getenv ("PROCESSOR_LEVEL");
         char *proc_rev = getenv ("PROCESSOR_REVISION");
@@ -6801,7 +6804,7 @@ if (flag) {
             _pclose (f);
             }
         fprintf (st, "\n        OS: %s", osversion);
-        fprintf (st, "\n        Architecture: %s%s%s, Processors: %s", arch, proc_arch3264 ? " on " : "", proc_arch3264 ? proc_arch3264  : "", procs);
+        fprintf (st, "\n        Architecture: %s%s%s, Processors: %s", proc_arch, proc_arch3264 ? " on " : "", proc_arch3264 ? proc_arch3264  : "", procs);
         fprintf (st, "\n        Processor Id: %s, Level: %s, Revision: %s", proc_id ? proc_id : "", proc_level ? proc_level : "", proc_rev ? proc_rev : "");
         strlcpy (wmicpath, sim_get_tool_path ("wmic"), sizeof (wmicpath));
         if (wmicpath[0]) {
@@ -8843,11 +8846,11 @@ if (!dont_detach_attach)
     detach_all (0, 0);                                  /* Detach everything to start from a consistent state */
 else {
     if (!suppress_warning) {
-        uint32 i, j;
+        size_t i, l;
 
         for (i = 0; (dptr = sim_devices[i]) != NULL; i++) { /* loop thru dev */
-            for (j = 0; j < dptr->numunits; j++) {      /* loop thru units */
-                uptr = (dptr->units) + j;
+            for (l = 0; l < dptr->numunits; l++) {      /* loop thru units */
+                uptr = (dptr->units) + l;
                 if (uptr->flags & UNIT_ATT) {           /* attached? */
                     sim_printf ("warning - leaving %s attached to '%s'\n", sim_uname (uptr), uptr->filename);
                     warned = TRUE;
@@ -11118,6 +11121,9 @@ CONST char *get_sim_sw (CONST char *cptr)
 int32 lsw, lnum;
 char gbuf[CBUFSIZE];
 
+if (cptr == NULL)
+    return cptr;
+
 while (*cptr == '-') {                                  /* while switches */
     cptr = get_glyph (cptr, gbuf, 0);                   /* get switch glyph */
     switch (get_switches (gbuf, &lsw, &lnum)) {         /* parse */
@@ -11237,7 +11243,7 @@ return cptr;
 const char *put_switches (char *buf, size_t bufsize, uint32 sw)
 {
 char *optr = buf;
-int32 bit;
+uint32 bit;
 
 memset (buf, 0, bufsize);
 if ((sw == 0) || (bufsize < 3))
@@ -11247,7 +11253,7 @@ if ((sw == 0) || (bufsize < 3))
 for (bit=0; bit <= ('Z'-'A'); bit++)
     if (sw & (1 << bit))
         if ((size_t)(optr - buf) < bufsize)
-            *optr++ = 'A' + bit;
+            *optr++ = 'A' + ((char) bit);
 return buf;
 }
 
@@ -13223,8 +13229,8 @@ uint32 default_haltafter = get_default_env_parameter (dev_name, "SIM_EXPECT_HALT
 if (exp->buf_size) {
     char *bstr = sim_encode_quoted_string (exp->buf, exp->buf_ins);
 
-    fprintf (st, "  Match Buffer Size: %" SIZE_T_FMT "d\n", exp->buf_size);
-    fprintf (st, "  Buffer Insert Offset: %" SIZE_T_FMT "d\n", exp->buf_ins);
+    fprintf (st, "  Match Buffer Size: %" SIM_PRIsize_t "\n", exp->buf_size);
+    fprintf (st, "  Buffer Insert Offset: %" SIM_PRIsize_t "\n", exp->buf_ins);
     fprintf (st, "  Buffer Contents: %s\n", bstr);
     if (default_haltafter)
         fprintf (st, "  Default HaltAfter: %u %s\n", (unsigned) default_haltafter, sim_vm_interval_units);
@@ -13360,7 +13366,7 @@ for (i=0; i < exp->size; i++) {
                     char *estr = sim_encode_quoted_string (exp->buf, exp->buf_ins);
                     char *mstr = sim_encode_quoted_string (&ep->match[ep->size-exp->buf_ins], exp->buf_ins);
 
-                    sim_debug (exp->dbit, exp->dptr, "Checking String[0:%" SIZE_T_FMT "d]: %s\n", exp->buf_ins, estr);
+                    sim_debug (exp->dbit, exp->dptr, "Checking String[0:%" SIM_PRIsize_t "]: %s\n", exp->buf_ins, estr);
                     sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                     free (estr);
                     free (mstr);
@@ -13372,8 +13378,8 @@ for (i=0; i < exp->size; i++) {
                 char *estr = sim_encode_quoted_string (&exp->buf[exp->buf_size-(ep->size-exp->buf_ins)], ep->size-exp->buf_ins);
                 char *mstr = sim_encode_quoted_string (ep->match, ep->size-exp->buf_ins);
 
-                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT "d:%" SIZE_T_FMT "d]: %s\n",
-                           exp->buf_size - ep->size - exp->buf_ins, ep->size-exp->buf_ins, estr);
+                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIM_PRIssize_t ":%" SIM_PRIssize_t "]: %s\n",
+                           exp->buf_size - ep->size - exp->buf_ins, ep->size - exp->buf_ins, estr);
                 sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                 free (estr);
                 free (mstr);
@@ -13387,7 +13393,7 @@ for (i=0; i < exp->size; i++) {
                 char *estr = sim_encode_quoted_string (&exp->buf[exp->buf_ins-ep->size], ep->size);
                 char *mstr = sim_encode_quoted_string (ep->match, ep->size);
 
-                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIZE_T_FMT "u:%" SIZE_T_FMT "u]: %s\n",
+                sim_debug (exp->dbit, exp->dptr, "Checking String[%" SIM_PRIssize_t ":%" SIM_PRIsize_t "]: %s\n",
                           exp->buf_ins - ep->size, ep->size, estr);
                 sim_debug (exp->dbit, exp->dptr, "Against Match Data: %s\n", mstr);
                 free (estr);
@@ -13409,7 +13415,7 @@ if (exp->buf_ins == exp->buf_size) {                    /* At end of match buffe
         memmove (exp->buf, &exp->buf[exp->buf_size/2], exp->buf_size-(exp->buf_size/2));
         exp->buf_ins -= exp->buf_size/2;
         exp->buf_data = exp->buf_ins;
-        sim_debug (exp->dbit, exp->dptr, "Buffer Full - sliding the last %" SIZE_T_FMT "d bytes to start of buffer new insert at: %" SIZE_T_FMT "d\n",
+        sim_debug (exp->dbit, exp->dptr, "Buffer Full - sliding the last %" SIM_PRIsize_t " bytes to start of buffer new insert at: %" SIM_PRIsize_t "\n",
                   exp->buf_size / 2, exp->buf_ins);
         }
     else {
@@ -13500,7 +13506,7 @@ uint32 after = get_default_env_parameter (dev_name, "SIM_SEND_AFTER", delay);
 
 fprintf (st, "%s\n", tmxr_send_line_name (snd));
 if (snd->extoff < snd->insoff) {
-    fprintf (st, "  %" SIZE_T_FMT "d bytes of pending input Data:\n    ", snd->insoff-snd->extoff);
+    fprintf (st, "  %" SIM_PRIssize_t " bytes of pending input Data:\n    ", snd->insoff-snd->extoff);
     fprint_buffer_string (st, snd->buffer+snd->extoff, snd->insoff-snd->extoff);
     fprintf (st, "\n");
     }
@@ -13852,7 +13858,11 @@ if (sim_deb_switches & SWMASK ('P')) {
     sprintf(pc_s, "-%s:", sim_PC->name);
     sprint_val (&pc_s[strlen(pc_s)], val, sim_PC->radix, sim_PC->width, sim_PC->flags & REG_FMT);
     }
-sprintf(debug_line_prefix, "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, AIO_MAIN_THREAD ? "" : "+", dptr->name, debug_type);
+
+sprintf(debug_line_prefix, "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, AIO_MAIN_THREAD ? "" : "+", dev_name, 
+        (debug_type != NULL ? debug_type : "generic"));
+AIO_DEBUG_UNLOCK;
+
 return debug_line_prefix;
 }
 
@@ -14244,7 +14254,7 @@ if (sim_deb && ((dptr->dctrl | (uptr ? uptr->dctrl : 0)) & reason)) {
                 continue;
                 }
             if (same > 0) {
-                _sim_debug_unit (reason, uptr, "%04" SIZE_T_FMT "X thru %04" SIZE_T_FMT "X same as above\n",
+                _sim_debug_unit (reason, uptr, "%04" SIM_PRIXsize_t " thru %04" SIM_PRIXsize_t " same as above\n",
                                  i-(16*same), i - 1);
                 same = 0;
                 }
@@ -14293,10 +14303,10 @@ if (sim_deb && ((dptr->dctrl | (uptr ? uptr->dctrl : 0)) & reason)) {
             strbuf[soff+sidx] = '\0';
             ebcdicbuf[eidx] = '\0';
             rad50buf[ridx] = '\0';
-            _sim_debug_unit (reason, uptr, "%04" SIZE_T_FMT "X%-48s %s%s%s\n", i, outbuf, strbuf, ebcdicbuf, rad50buf);
+            _sim_debug_unit (reason, uptr, "%04" SIM_PRIXsize_t "%-48s %s%s%s\n", i, outbuf, strbuf, ebcdicbuf, rad50buf);
             }
         if (same > 0) {
-            _sim_debug_unit (reason, uptr, "%04" SIZE_T_FMT "X thru %04" SIZE_T_FMT "X same as above\n",
+            _sim_debug_unit (reason, uptr, "%04" SIM_PRIXsize_t " thru %04" SIM_PRIXsize_t " same as above\n",
                              (i-(16*same)), len - 1);
             }
         }
@@ -14549,7 +14559,7 @@ for (hblock = astrings; (htext = *hblock) != NULL; hblock++) {
                             if (dptr) {
                                 char buf[129];
                                 n = uptr? uptr - dptr->units: 0;
-                                sprintf (buf, "%s%u", dptr->name, (int)n);
+                                sprintf (buf, "%s%" SIM_PRIsize_t, dptr->name, n);
                                 appendText (topic, buf, strlen (buf));
                                 }
                             break;
@@ -14656,15 +14666,15 @@ for (hblock = astrings; (htext = *hblock) != NULL; hblock++) {
                 }
             excluded = FALSE;
             if (*start == '?') {                /* Conditional topic? */
-                size_t n = 0;
+                size_t nn = 0;
                 start++;
                 while (sim_isdigit (*start))    /* Get param # */
-                    n += (n * 10) + (*start++ - '0');
-                if (!*start || *start == '\n'|| n == 0 || n >= VSMAX)
+                    nn += (nn * 10) + (*start++ - '0');
+                if (!*start || *start == '\n'|| nn == 0 || nn >= VSMAX)
                     FAIL (SCPE_ARG, Invalid parameter number, start);
-                while (n > vsnum)               /* Get arg pointer if not cached */
+                while (nn > vsnum)               /* Get arg pointer if not cached */
                     vstrings[vsnum++] = va_arg (ap, char *);
-                end = vstrings[n-1];            /* Check for True */
+                end = vstrings[nn-1];            /* Check for True */
                 if (!end || !(sim_toupper (*end) == 'T' || *end == '1')) {
                     excluded = TRUE;            /* False, skip topic this time */
                     if (*htext)
@@ -15051,7 +15061,7 @@ while (TRUE) {
 
     if (topic->kids) {
         size_t w = 0;
-        char *p;
+        char *q;
         char tbuf[CBUFSIZE];
 
         fprintf (st, "\n    Additional information available:\n\n");
@@ -15059,9 +15069,9 @@ while (TRUE) {
             strlcpy (tbuf, topic->children[i]->title +
                     ((topic->children[i]->flags & HLP_MAGIC_TOPIC)? 1 : 0),
                     sizeof (tbuf));
-            for (p = tbuf; *p; p++) {
-                if (blankch (*p))
-                    *p = '_';
+            for (q = tbuf; *q; q++) {
+                if (blankch (*q))
+                    *q = '_';
                 }
             w += 4 + topic->kidwid;
             if (w > 80) {
@@ -16134,7 +16144,7 @@ for (i = 0; (dptr = devices[i]) != NULL; i++) {
             }
 
         if (sim_switches & SWMASK ('R'))            /* Debug output */
-            sim_printf ("%5s:%-9.9s %s(rdx=%u, wd=%u, off=%u, dep=%u, strsz=%" SIZE_T_FMT "u, objsz=%" SIZE_T_FMT "u, elesz=%" SIZE_T_FMT "u, rsz=%" SIZE_T_FMT "u, %s %s%s membytes=%" SIZE_T_FMT "u, macro=%s)\n", dptr->name, rptr->name, rptr->macro,
+            sim_printf ("%5s:%-9.9s %s(rdx=%u, wd=%u, off=%u, dep=%u, strsz=%" SIM_PRIsize_t ", objsz=%" SIM_PRIsize_t ", elesz=%" SIM_PRIsize_t ", rsz=%" SIM_PRIsize_t ", %s %s%s membytes=%" SIM_PRIsize_t ", macro=%s)\n", dptr->name, rptr->name, rptr->macro,
                         rptr->radix, rptr->width, rptr->offset, rptr->depth, rptr->stride, rptr->obj_size, rptr->size, rsz, rptr->desc ? rptr->desc : "",
                         (rptr->flags & REG_FIT) ? "REG_FIT" : "", (rptr->flags & REG_VMIO) ? " REG_VMIO" : "",
                         memsize, rptr->macro ? rptr->macro : "");
@@ -16325,7 +16335,7 @@ while (t->function_name) {
             }
         input = remainder;
         ++d;
-        if ((*input != '\0') && (d->expected_result == NULL))
+        if ((input == NULL || (*input != '\0')) && (d->expected_result == NULL))
             return sim_messagef (SCPE_IERR, "Invalid test configuration detected\n");
         }
     ++t;

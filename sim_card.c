@@ -840,7 +840,7 @@ _sim_parse_card(UNIT *uptr, DEVICE *dptr, struct _card_buffer *buf, uint16 (*ima
             }
         }
     end_card:
-        sim_debug(DEBUG_CARD, dptr, "-%" SIZE_T_FMT "u-", i);
+        sim_debug(DEBUG_CARD, dptr, "-%" SIM_PRIsize_t "-", i);
 
         /* Scan to end of line, ignore anything after last column */
         while (buf->buffer[i] != '\n' && buf->buffer[i] != '\r' && i < buf->len) {
@@ -887,20 +887,20 @@ _sim_parse_card(UNIT *uptr, DEVICE *dptr, struct _card_buffer *buf, uint16 (*ima
 
         /* Convert card and check for errors */
         for (col = i = 0; i < buf->len && col < 80;) {
-            uint8       c;
+            uint8       c1;
 
             if (buf->buffer[i] & 0x80)
                 break;
-            c = buf->buffer[i] & 077;
-            if (sim_parity_table[(int)c] == (buf->buffer[i++] & 0100))
+            c1 = buf->buffer[i] & 077;
+            if (sim_parity_table[(int) c1] == (buf->buffer[i++] & 0100))
                 (*image)[0] |= CARD_ERR;
-            (*image)[col] = ((uint16)c) << 6;
+            (*image)[col] = ((uint16) c1) << 6;
             if (buf->buffer[i] & 0x80)
                 break;
-            c = buf->buffer[i] & 077;
-            if (sim_parity_table[(int)c] == (buf->buffer[i++] & 0100))
+            c1 = buf->buffer[i] & 077;
+            if (sim_parity_table[(int) c1] == (buf->buffer[i++] & 0100))
                 (*image)[0] |= CARD_ERR;
-            (*image)[col++] |= c;
+            (*image)[col++] |= c1;
         }
 
         /* Record over length of card, skip until next */

@@ -205,3 +205,12 @@ if (CYGWIN)
     target_compile_definitions(os_features INTERFACE HAVE_WINMM)
   endif ()
 endif ()
+
+## <inttypes.h>
+check_include_file(inttypes.h have_inttypes_h)
+if (have_inttypes_h)
+    target_compile_definitions(os_features INTERFACE HAVE_INTTYPES_H)
+endif (have_inttypes_h)
+
+## Sanitizer support
+find_package(Sanitizers)

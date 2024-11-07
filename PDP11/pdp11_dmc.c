@@ -2653,7 +2653,8 @@ for (dmc=active=attached=0; dmc < mp->lines; dmc++) {
         (lp->xmte && controller->link.xmt_buffer) ||
         ddcmp_UserSendMessage(controller)) {
         if (tmxr_tpbusyln(lp)) {
-            sim_debug(DBG_DAT, controller->device, "dmc_poll_svc(dmc=%d) - Packet Transmission of remaining %d bytes restarting...\n", dmc, tmxr_tpqln (lp));
+            sim_debug(DBG_DAT, controller->device, "dmc_poll_svc(dmc=%d) - Packet Transmission of remaining %" SIM_PRIssize_t " bytes restarting...\n",
+                      dmc, tmxr_tpqln (lp));
             }
         dmc_svc (&controller->device->units[dmc]);  /* Flush pending output */
         }
