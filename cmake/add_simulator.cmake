@@ -28,7 +28,6 @@ set(SIM_SOURCES
     ${CMAKE_SOURCE_DIR}/sim_card.c
     ${CMAKE_SOURCE_DIR}/sim_console.c
     ${CMAKE_SOURCE_DIR}/sim_disk.c
-    ${CMAKE_SOURCE_DIR}/sim_ether.c
     ${CMAKE_SOURCE_DIR}/sim_fio.c
     ${CMAKE_SOURCE_DIR}/sim_imd.c
     ${CMAKE_SOURCE_DIR}/sim_scsi.c
@@ -44,13 +43,6 @@ set(SIM_VIDEO_SOURCES
     ${CMAKE_SOURCE_DIR}/display/display.c
     ${CMAKE_SOURCE_DIR}/display/sim_ws.c)
 
-if (WITH_NETWORK AND WITH_SLIRP)
-    list(APPEND SIM_SOURCES
-            sim_slirp/sim_slirp.c
-            sim_slirp/slirp_poll.c
-    )
-endif ()
-
 ## Build a simulator core library, with and without AIO support. The AIO variant
 ## has "_aio" appended to its name, e.g., "simhz64_aio" or "simhz64_video_aio".
 function(build_simcore _targ)
@@ -61,6 +53,7 @@ function(build_simcore _targ)
 
     set(sim_aio_lib "${_targ}_aio")
     add_library(${sim_aio_lib} STATIC ${SIM_SOURCES})
+    target_compile_definitions(${sim_aio_lib} PUBLIC ${AIO_FLAGS})
 
     # Components that need to be turned on while building the library, but
     # don't export out to the dependencies (hence PRIVATE.)
@@ -76,21 +69,6 @@ function(build_simcore _targ)
 
         target_compile_definitions(${lib} PRIVATE USE_SIM_CARD USE_SIM_IMD)
         target_compile_options(${lib} PRIVATE ${EXTRA_TARGET_CFLAGS})
-
-        if (WITH_NETWORK AND WITH_SLIRP)
-            target_compile_definitions(
-                ${lib}
-                PUBLIC
-                    HAVE_SLIRP_NETWORK
-                    LIBSLIRP_STATIC
-            )
-
-            if (HAVE_INET_PTON)
-                ## libslirp detects HAVE_INET_PTON for us.
-                target_compile_definitions(${lib} PUBLIC HAVE_INET_PTON)
-            endif()
-        endif ()    
-
         target_link_options(${lib} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
         # Make sure that the top-level directory is part of the libary's include path:
@@ -125,12 +103,12 @@ function(build_simcore _targ)
         endif ()
 
         # Define SIM_BUILD_TOOL for the simulator'
-        target_compile_definitions("${lib}" PRIVATE
+        target_compile_definitions("${lib}" 
+        PRIVATE
              "SIM_BUILD_TOOL=CMake (${CMAKE_GENERATOR})"
         )
 
         target_link_libraries(${lib} PUBLIC
-            simh_network
             simh_regexp
             os_features
             thread_lib
@@ -144,8 +122,6 @@ function(build_simcore _targ)
 
         add_dependencies(${lib} update_sim_commit)
     endforeach ()
-
-    target_compile_definitions(${sim_aio_lib} PUBLIC ${AIO_FLAGS})
 
     # Create target cppcheck rule, if detected.
     if (ENABLE_CPPCHECK AND cppcheck_cmd)
@@ -180,9 +156,10 @@ endfunction(build_simcore _targ)
 list(APPEND ADD_SIMULATOR_OPTIONS
     "FEATURE_INT64"
     "FEATURE_FULL64"
-    "BUILDROMS"
     "FEATURE_VIDEO"
     "FEATURE_DISPLAY"
+    "FEATURE_NETWORK"
+    "BUILDROMS"
     "NO_INSTALL"
     "BESM6_SDL_HACK"
     "USES_AIO"
@@ -215,9 +192,9 @@ list(APPEND ADD_SIMULATOR_NARG
 function (simh_executable_template _targ)
     cmake_parse_arguments(SIMH "${ADD_SIMULATOR_OPTIONS}" "${ADD_SIMULATOR_1ARG}" "${ADD_SIMULATOR_NARG}" ${ARGN})
 
-    if (NOT DEFINED SIMH_SOURCES)
+    if (NOT SIMH_SOURCES)
         message(FATAL_ERROR "${_targ}: No source files?")
-    endif (NOT DEFINED SIMH_SOURCES)
+    endif ()
 
     if (SIMH_USES_AIO AND NOT WITH_ASYNC)
         message(WARNING
@@ -241,13 +218,13 @@ function (simh_executable_template _targ)
         target_link_options(${_targ} PUBLIC "/SUBSYSTEM:CONSOLE")
     endif ()
 
-    if (DEFINED SIMH_DEFINES)
+    if (SIMH_DEFINES)
         target_compile_definitions("${_targ}" PUBLIC "${SIMH_DEFINES}")
-    endif (DEFINED SIMH_DEFINES)
+    endif ()
 
     # This is a quick cheat to make sure that all of the include paths are
     # absolute paths.
-    if (DEFINED SIMH_INCLUDES)
+    if (SIMH_INCLUDES)
         set(_normalized_includes)
         foreach (inc IN LISTS SIMH_INCLUDES)
             if (NOT IS_ABSOLUTE "${inc}")
@@ -266,6 +243,10 @@ function (simh_executable_template _targ)
         endif ()
     endif ()
 
+    if (SIMH_FEATURE_NETWORK)
+        target_link_libraries(${_targ} PUBLIC "simh_network$<$<BOOL:${SIMH_USES_AIO}>:_aio>")
+    endif ()
+
     set(SIMH_SIMLIB simhcore)
     if (SIMH_FEATURE_INT64)
         set(SIMH_SIMLIB simhi64)
@@ -281,12 +262,10 @@ function (simh_executable_template _targ)
         endif ()
     endif ()
 
-    # Uses AIO...
-    if (SIMH_USES_AIO)
-        set(SIMH_SIMLIB "${SIMH_SIMLIB}_aio")
-    endif()
-
-    target_link_libraries("${_targ}" PUBLIC "${SIMH_SIMLIB}")
+    target_link_libraries("${_targ}" PUBLIC
+        "${SIMH_SIMLIB}$<$<BOOL:${SIMH_USES_AIO}>:_aio>"
+        "$<$<NOT:$<BOOL:${SIMH_FEATURE_NETWORK}>>:simh_nonetwork>"
+    )
 endfunction ()
 
 

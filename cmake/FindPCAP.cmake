@@ -32,45 +32,64 @@ find_path(PCAP_INCLUDE_DIR
 #     set(LIB_PATH_SUFFIXES x86)
 # endif ()
 
-# find_library(PCAP_LIBRARY
-#         NAMES
-#             pcap pcap_static libpcap libpcap_static
-#         HINTS
-#             ENV PCAP_DIR
-#         PATH_SUFFIXES
-#             ${LIB_PATH_SUFFIXES}
-#         PATHS
-#             ${PCAP_PATH}
-#         )
+find_library(PCAP_LIBRARY
+        NAMES
+            pcap pcap_static libpcap libpcap_static wpcap
+        HINTS
+            ENV PCAP_DIR
+        PATH_SUFFIXES
+            ${LIB_PATH_SUFFIXES}
+        PATHS
+            ${PCAP_PATH}
+            ${CMAKE_BINARY_DIR}/npcap/Lib
+        )
 # ## message(STATUS "LIB_PATH_SUFFIXES ${LIB_PATH_SUFFIXES}")
-# ## message(STATUS "PCAP_LIBRARY is ${PCAP_LIBRARY}")
+## message(STATUS "pcap library is ${PCAP_LIBRARY}")
 
-# if (WIN32 AND PCAP_LIBRARY)
-#     ## Only worry about the packet library on Windows.
-#     find_library(PACKET_LIBRARY
-#         NAMES
-#             packet Packet
-#         HINTS
-#             ENV PCAP_DIR
-#         PATH_SUFFIXES
-#             ${LIB_PATH_SUFFIXES}
-#         PATHS
-#             ${PCAP_PATH}
-#     )
-# else (WIN32 AND PCAP_LIBRARY)
-#     set(PACKET_LIBRARY)
-# endif (WIN32 AND PCAP_LIBRARY)
-# ## message(STATUS "PACKET_LIBRARY is ${PACKET_LIBRARY}")
+if (WIN32 AND PCAP_LIBRARY)
+    ## Only worry about the packet library on Windows.
+    find_library(PACKET_LIBRARY
+        NAMES
+            packet Packet
+        HINTS
+            ENV PCAP_DIR
+        PATH_SUFFIXES
+            ${LIB_PATH_SUFFIXES}
+        PATHS
+            ${PCAP_PATH}
+            ${CMAKE_BINARY_DIR}/npcap/Lib
+    )
+else ()
+    set(PACKET_LIBRARY)
+endif (WIN32 AND PCAP_LIBRARY)
+## message(STATUS "packet library is ${PACKET_LIBRARY}")
 
-# set(PCAP_LIBRARIES ${PCAP_LIBRARY} ${PACKET_LIBRARY})
 set(PCAP_INCLUDE_DIRS ${PCAP_INCLUDE_DIR})
+
+set(PCAP_LIBRARIES)
+if (PCAP_LIBRARY)
+    list(APPEND PCAP_LIBRARIES ${PCAP_LIBRARY})
+    if (PACKET_LIBRARY)
+        list(APPEND PCAP_LIBRARIES ${PACKET_LIBRARY})
+    endif ()
+endif ()
+
 unset(PCAP_LIBRARY)
 unset(PCAP_INCLUDE_DIR)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(
-    PCAP
-    REQUIRED_VARS
-        ## PCAP_LIBRARIES
-        PCAP_INCLUDE_DIRS
-)
+if (PCAP_LIBRARIES)
+    find_package_handle_standard_args(
+        PCAP
+        REQUIRED_VARS
+            PCAP_LIBRARIES
+            PCAP_INCLUDE_DIRS
+    )
+else ()
+    ## Dynamic, headers only
+    find_package_handle_standard_args(
+        PCAP
+        REQUIRED_VARS
+            PCAP_INCLUDE_DIRS
+    )
+endif ()

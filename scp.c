@@ -460,16 +460,23 @@ if (sim_idle_wait) {
     }
 AIO_IUNLOCK;
 }
-#else
-t_bool sim_asynch_enabled = FALSE;
-#endif
 
 /* sim_unit_aio_pending(): Test if the UNIT has pending asynch I/O. Does not
  * depend on being in the main simulator thread, unlike sim_is_active(). */
 t_bool sim_unit_aio_pending(UNIT *uptr)
 {
-    return (uptr->next != NULL) || AIO_IS_ACTIVE(uptr);
+    return ((uptr->a_is_active != NULL && uptr->a_is_active(uptr)) || (uptr->a_next != NULL));
 }
+#else
+t_bool sim_asynch_enabled = FALSE;
+
+/* sim_unit_aio_pending(): Test if the UNIT has pending asynch I/O. Does not
+ * depend on being in the main simulator thread, unlike sim_is_active(). */
+t_bool sim_unit_aio_pending(UNIT *uptr)
+{
+    return FALSE;
+}
+#endif
 
 /* The per-simulator init routine is a weak global that defaults to NULL
    The other per-simulator pointers can be overridden by the init routine
@@ -12242,7 +12249,7 @@ if (uptr->next) {
 return SCPE_OK;
 }
 
-/* sim_is_active - test for entry in queue
+/* sim_is_active - test whether the unit is on an event queue.
 
    Inputs:
         uptr    =       pointer to unit
@@ -12254,7 +12261,7 @@ t_bool sim_is_active (UNIT *uptr)
 {
 AIO_VALIDATE(uptr);
 AIO_UPDATE_QUEUE;
-return ((sim_unit_aio_pending(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active (uptr) : FALSE)) ? TRUE : FALSE);
+return (uptr->next != NULL || sim_unit_aio_pending(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) && sim_timer_is_active (uptr)));
 }
 
 /* sim_activate_time - return activation time

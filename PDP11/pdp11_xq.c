@@ -652,7 +652,7 @@ t_stat xq_showmac (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
   CTLR* xq = xq_unit2ctlr(uptr);
   char  buffer[20];
 
-  eth_mac_fmt((ETH_MAC*)xq->var->mac, buffer);
+  eth_mac_fmt(xq->var->mac, buffer);
   fprintf(st, "MAC=%s", buffer);
   return SCPE_OK;
 }
@@ -748,7 +748,7 @@ t_stat xq_show_filters (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
     eth_mac_fmt(xq->var->init.phys, buffer);
     fprintf(st, "Physical Address=%s\n", buffer);
     for (i=1; i<xq->var->etherface->addr_count; i++) {
-      eth_mac_fmt((ETH_MAC*)xq->var->etherface->filter_address[i], buffer);
+      eth_mac_fmt(xq->var->etherface->filter_address[i], buffer);
       fprintf(st, "Additional Filter:[%2d]: %s\n", (int)i, buffer);
     }
     if (xq->var->etherface->hash_filter) {
@@ -762,7 +762,7 @@ t_stat xq_show_filters (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
   } else {
     fprintf(st, "Filters:\n");
     for (i=0; i<XQ_FILTER_MAX; i++) {
-      eth_mac_fmt((ETH_MAC*)xq->var->setup.macs[i], buffer);
+      eth_mac_fmt(xq->var->setup.macs[i], buffer);
       fprintf(st, "  [%2d]: %s\n", (int)i, buffer);
     }
     if (xq->var->setup.multicast)

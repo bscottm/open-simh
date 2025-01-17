@@ -164,23 +164,21 @@ endif ()
 set(HAVE_TAP_NETWORK False)
 set(HAVE_BSDTUNTAP False)
 
-if (WITH_NETWORK)
+if (WITH_NETWORK AND WITH_TAP)
     ## TAP/TUN devices
-    if (WITH_TAP)
-        check_include_file(linux/if_tun.h if_tun_found)
+    check_include_file(linux/if_tun.h if_tun_found)
 
-        if (NOT if_tun_found)
-            check_include_file(net/if_tun.h net_if_tun_found)
-            if (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
-                set(HAVE_BSDTUNTAP True)
-            endif (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
-        endif (NOT if_tun_found)
+    if (NOT if_tun_found)
+        check_include_file(net/if_tun.h net_if_tun_found)
+        if (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
+            set(HAVE_BSDTUNTAP True)
+        endif ()
+    endif ()
 
-        if (if_tun_found OR net_if_tun_found)
-            set(HAVE_TAP_NETWORK True)
-        endif (if_tun_found OR net_if_tun_found)
-    endif (WITH_TAP)
-endif (WITH_NETWORK)
+    if (if_tun_found OR net_if_tun_found)
+        set(HAVE_TAP_NETWORK True)
+    endif ()
+endif ()
 
 ## Cygwin also wants winmm. Note: Untested but should work.
 if (CYGWIN)
@@ -241,6 +239,11 @@ target_compile_definitions(os_features INTERFACE
 if (WIN32)
     target_link_libraries(os_features INTERFACE ws2_32 wsock32 winmm)
     target_compile_definitions(os_features INTERFACE HAVE_WINMM)
+
+    if (OPENVPN_TUNTAP)
+        target_link_libraries(os_features INTERFACE setupapi)
+    endif ()
+
     if (NOT WINAPI_DEPRECATION)
         target_compile_definitions(os_features INTERFACE
             _CRT_NONSTDC_NO_WARNINGS

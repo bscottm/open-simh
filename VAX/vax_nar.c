@@ -81,7 +81,7 @@ t_stat nar_showmac (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
 {
 char buffer[20];
 
-eth_mac_fmt ((ETH_MAC*)nar_mac, buffer);
+eth_mac_fmt (nar_mac, buffer);
 fprintf (st, "MAC=%s", buffer);
 return SCPE_OK;
 }

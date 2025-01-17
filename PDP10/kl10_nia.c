@@ -634,7 +634,7 @@ void nia_disable()
 /*
  * Copy a MAC address from string to memory word.
  */
-void nia_cpy_mac(uint64 word1, uint64 word2, ETH_MAC *mac)
+void nia_cpy_mac(uint64 word1, uint64 word2, ETH_MAC mac)
 {
     mac[0] = (unsigned char)((word1 >> 28) & 0xff);
     mac[1] = (unsigned char)((word1 >> 20) & 0xff);
@@ -917,12 +917,12 @@ void nia_load_mcast()
             return;
         }
         if (word2 & 1) {
-            nia_cpy_mac(word1, word2, &nia_data.macs[n]);
+            nia_cpy_mac(word1, word2, nia_data.macs[n]);
             n++;
         }
      }
      for(i = 0; i< n; i++) {
-         eth_mac_fmt(&nia_data.macs[i], buffer);
+         eth_mac_fmt(nia_data.macs[i], buffer);
          sim_debug(DEBUG_DETAIL, &nia_dev, "NIA load mcast%d: %s\n",i,buffer);
      }
      nia_data.macs_n = n - 2;
@@ -1019,12 +1019,12 @@ void nia_packet_debug(struct nia_device *nia, const char *action,
 
         if (!(nia_dev.dctrl & DEBUG_ARP))
             return;
-        eth_mac_fmt(&arp->ethhdr.src, eth_src);
-        eth_mac_fmt(&arp->ethhdr.dest, eth_dst);
-        eth_mac_fmt(&arp->shwaddr, arp_shwaddr);
+        eth_mac_fmt(arp->ethhdr.src, eth_src);
+        eth_mac_fmt(arp->ethhdr.dest, eth_dst);
+        eth_mac_fmt(arp->shwaddr, arp_shwaddr);
         memcpy(&in_addr, &arp->sipaddr, sizeof(in_addr));
         strlcpy(arp_sipaddr, ipv4_inet_ntoa(in_addr), sizeof(arp_sipaddr));
-        eth_mac_fmt(&arp->dhwaddr, arp_dhwaddr);
+        eth_mac_fmt(arp->dhwaddr, arp_dhwaddr);
         memcpy(&in_addr, &arp->dipaddr, sizeof(in_addr));
         strlcpy(arp_dipaddr, ipv4_inet_ntoa(in_addr), sizeof(arp_dipaddr));
         sim_debug(DEBUG_ARP, &nia_dev,
@@ -1317,7 +1317,7 @@ t_stat nia_cmd_srv(UNIT * uptr)
              nia_error(EBSERR);
              return SCPE_OK;
          }
-         nia_cpy_mac(word1, word2, &nia_data.mac);
+         nia_cpy_mac(word1, word2, nia_data.mac);
          if (Mem_read_word(nia_data.cmd_entry + 6, &word1, 0)) {
              nia_error(EBSERR);
              return SCPE_OK;
@@ -1547,7 +1547,7 @@ t_stat nia_rec_srv(UNIT * uptr)
 t_stat nia_show_mac (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
 {
     char buffer[20];
-    eth_mac_fmt(&nia_data.mac, buffer);
+    eth_mac_fmt(nia_data.mac, buffer);
     fprintf(st, "MAC=%s", buffer);
     return SCPE_OK;
 }
@@ -1559,7 +1559,7 @@ t_stat nia_set_mac (UNIT* uptr, int32 val, CONST char* cptr, void* desc)
     if (!cptr) return SCPE_IERR;
     if (uptr->flags & UNIT_ATT) return SCPE_ALATT;
 
-    status = eth_mac_scan_ex(&nia_data.mac, cptr, uptr);
+    status = eth_mac_scan_ex(nia_data.mac, cptr, uptr);
     if (status != SCPE_OK)
       return status;
 
@@ -1599,9 +1599,9 @@ t_stat nia_attach(UNIT* uptr, CONST char* cptr)
         free(tptr);
         return status;
     }
-    eth_mac_fmt(&nia_data.mac, buf);     /* format ethernet mac address */
+    eth_mac_fmt(nia_data.mac, buf);      /* format ethernet mac address */
     if (SCPE_OK != eth_check_address_conflict (&nia_data.etherface,
-                                                 &nia_data.mac)) {
+                                                 nia_data.mac)) {
         eth_close(&nia_data.etherface);
         free(tptr);
         return sim_messagef (SCPE_NOATT,

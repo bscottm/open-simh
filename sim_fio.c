@@ -610,7 +610,7 @@ dwStatus = FormatMessageA (FORMAT_MESSAGE_FROM_SYSTEM|
                            Error,                             //  __in      DWORD dwMessageId,
                            0,                                 //  __in      DWORD dwLanguageId,
                            szMsgBuffer,                       //  __out     LPTSTR lpBuffer,
-                           sizeof (szMsgBuffer) -1,           //  __in      DWORD nSize,
+                           sizeof (szMsgBuffer) - 1,          //  __in      DWORD nSize,
                            NULL);                             //  __in_opt  va_list *Arguments
 if (0 == dwStatus)
     snprintf(szMsgBuffer, sizeof(szMsgBuffer) - 1, "Error Code: 0x%X", Error);

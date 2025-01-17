@@ -56,11 +56,14 @@ function(editline_debug _VARNAME)
     endif()
 endfunction()
 
-# Alias all EditLine_FIND_X variables to EDITLINE_FIND_X
-# Workaround for find_package: no way to force case of variable's names it creates (I don't want to change MY coding standard)
+# Alias all EditLine_FIND_X variables to EDITLINE_FIND_X Workaround for
+# find_package: no way to force case of variable's names it creates (I don't
+# want to change MY coding standard)
 # ---
-# NOTE: only prefix is considered, not full name of the variables to minimize conflicts with string(TOUPPER) for example
-# EditLine_foo becomes EDITLINE_foo not EditLine_FOO as this is two different variables
+# NOTE: only prefix is considered, not full name of the variables to minimize
+# conflicts with string(TOUPPER) for example EditLine_foo becomes EDITLINE_foo
+# not EditLine_FOO as these are two different variables
+
 set(${EDITLINE_PRIVATE_VAR_NS}_FIND_PKG_PREFIX "EditLine")
 get_directory_property(${EDITLINE_PRIVATE_VAR_NS}_CURRENT_VARIABLES VARIABLES)
 foreach(${EDITLINE_PRIVATE_VAR_NS}_VARNAME ${${EDITLINE_PRIVATE_VAR_NS}_CURRENT_VARIABLES})

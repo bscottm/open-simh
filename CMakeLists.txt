@@ -234,6 +234,9 @@ option(USE_POLL
 option(USE_GLIB
         "Use glib-2.0 instead of a minimal glib implementation with libslirp"
         FALSE)
+option(OPENVPN_TUNTAP
+       "Windows OpenVPN tap-windows network support (default: enabled)"
+       TRUE)
 
 # Places where CMake should look for dependent package configuration fragments and artifacts:
 set(SIMH_PREFIX_PATH_LIST)

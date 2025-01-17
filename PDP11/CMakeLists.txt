@@ -74,6 +74,7 @@ add_simulator(pdp11
         VM_PDP11
     FEATURE_VIDEO
     FEATURE_DISPLAY
+    FEATURE_NETWORK
     USES_AIO
     BUILDROMS
     LABEL PDP11

@@ -20,6 +20,12 @@ install_arch_linux() {
 
 }
 
+install_opensuse() {
+    sudo zypper install gcc git pkgconf-pkg-config cmake cmake-extras ninja \
+	    which pcre-devel pcre2-devel libpng16-devel libedit-devel SDL2-devel \
+	    SDL2_ttf-devel libpcap-devel libvdeplug-devel zlib-devel
+}
+
 install_linux() {
     sudo apt-get update -yqqm
     sudo apt-get install -ym pkg-config
@@ -97,14 +103,15 @@ install_clang64() {
 
 
 case "$1" in
-  osx|macports|linux|mingw32|mingw64|ucrt64|clang64)
+  osx|macports|linux|opensuse|mingw32|mingw64|ucrt64|clang64)
     install_"$1"
     ;;
   arch-linux)
     install_arch_linux
     ;;
   *)
-    echo "$0: Need an operating system name: osx, arch-linux, linux, mingw64 or ucrt64"
+    echo "$0: Need an operating system name:"
+    typeset -f | sed -e '/^install_/!d' -e 's/^install_/  - /' -e 's/ ()//' | sort
     exit 1
     ;;
 esac

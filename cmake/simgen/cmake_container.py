@@ -72,7 +72,6 @@ class CMakeBuildSystem:
         '${CC_OUTSPEC}', '$(CC_OUTSPEC)',
         '${SIM}', '$(SIM)',
         '-o', '$@',
-        '${NETWORK_OPT}', '$(NETWORK_OPT)',
         '${SCSI}', '$(SCSI)',
         '${DISPLAY_OPT}', '$(DISPLAY_OPT)',
         '${NETWORK_LDFLAGS}', '$(NETWORK_LDFLAGS)',

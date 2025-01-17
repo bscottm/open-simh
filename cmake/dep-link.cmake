@@ -4,7 +4,21 @@
              
 add_library(simh_regexp INTERFACE)
 add_library(simh_video INTERFACE)
-add_library(simh_network INTERFACE)
+
+## Networking gets a bit screwy depending on whether USE_SHARED, USE_NETWORK
+## and AIO are enabled.
+##
+## simh_nonetwork: No networking support. Used when the FEATURE_NETWORK option isn't
+## part of an add_simulator()
+add_library(simh_nonetwork STATIC)
+target_sources(simh_nonetwork PRIVATE sim_ether.c)
+target_link_libraries(simh_nonetwork PUBLIC os_features)
+
+## simh_network: The non-AIO version of the network support
+add_library(simh_network STATIC)
+## simh_network_aio: The AIO version of the network support
+add_library(simh_network_aio STATIC)
+target_compile_definitions(simh_network_aio PUBLIC ${AIO_FLAGS})
         
 ## LIBPCAP is a special case
 set(LIBPCAP_PROJECT "libpcap")
@@ -13,6 +27,21 @@ set(LIBPCAP_RELEASE "1.10.1")
 set(LIBPCAP_ARCHIVE_TYPE "tar.gz")
 set(LIBPCAP_TAR_ARCHIVE "${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}.${LIBPCAP_ARCHIVE_TYPE}")
 set(LIBPCAP_SOURCE_URL  "https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/${LIBPCAP_TAR_ARCHIVE}")
+
+## And so is Npcap (the Windows version of libcap + device driver.)
+set(NPCAP_PROJECT "npcap")
+set(NPCAP_ARCHIVE_NAME "npcap-sdk")
+set(NPCAP_RELEASE "1.13")
+set(NPCAP_ARCHIVE_TYPE "zip")
+set(NPCAP_SOURCE_URL "https://npcap.com/dist/${NPCAP_ARCHIVE_NAME}-${NPCAP_RELEASE}.${NPCAP_ARCHIVE_TYPE}")
+
+## OpenVPN tap-windows gets downloaded as well...
+set(TAPWINDOWS_PROJECT "tap-windows")
+set(TAPWINDOWS_ARCHIVE_NAME "tap-windows")
+set(TAPWINDOWS_RELEASE "master")
+set(TAPWINDOWS_ARCHIVE_TYPE "zip")
+set(TAPWINDOWS_TAR_ARCHIVE "${TAPWINDOWS_ARCHIVE_NAME}-${TAPWINDOWS_RELEASE}.${TAPWINDOWS_ARCHIVE_TYPE}")
+set(TAPWINDOWS_SOURCE_URL "https://github.com/OpenVPN/tap-windows/archive/master.zip")
                                                              
 function(fix_interface_libs _targ)
 get_target_property(_aliased ${_targ} ALIASED_TARGET)
@@ -34,6 +63,60 @@ get_target_property(_aliased ${_targ} ALIASED_TARGET)
         set_property(TARGET ${_targ} PROPERTY INTERFACE_LINK_LIBRARIES ${fixed_libs})
     endif ()
 endfunction ()
+
+# Add sources to the simulators' network libraries
+function (simh_network_sources)
+    target_sources(simh_network PRIVATE ${ARGN})
+    target_sources(simh_network_aio PRIVATE ${ARGN})
+endfunction ()
+
+function(simh_network_compile_definitions)
+    cmake_parse_arguments(SIMH "" "" "PUBLIC;PRIVATE;INTERFACE" ${ARGN})
+    if (SIMH_PUBLIC)
+        target_compile_definitions(simh_network PUBLIC ${SIMH_PUBLIC})
+        target_compile_definitions(simh_network_aio PUBLIC ${SIMH_PUBLIC})
+    endif()
+    if (SIMH_PRIVATE)
+        target_compile_definitions(simh_network PRIVATE ${SIMH_PRIVATE})
+        target_compile_definitions(simh_network_aio PRIVATE ${SIMH_PRIVATE})
+    endif()
+    if (SIMH_INTERFACE)
+        target_compile_definitions(simh_network INTERFACE ${SIMH_INTERFACE})
+        target_compile_definitions(simh_network_aio INTERFACE ${SIMH_INTERFACE})
+    endif()
+endfunction()
+
+function(simh_network_include_directories)
+    cmake_parse_arguments(SIMH "" "" "PUBLIC;PRIVATE;INTERFACE" ${ARGN})
+    if (SIMH_PUBLIC)
+        target_include_directories(simh_network PUBLIC ${SIMH_PUBLIC})
+        target_include_directories(simh_network_aio PUBLIC ${SIMH_PUBLIC})
+    endif()
+    if (SIMH_PRIVATE)
+        target_include_directories(simh_network PRIVATE ${SIMH_PRIVATE})
+        target_include_directories(simh_network_aio PRIVATE ${SIMH_PRIVATE})
+    endif()
+    if (SIMH_INTERFACE)
+        target_include_directories(simh_network INTERFACE ${SIMH_INTERFACE})
+        target_include_directories(simh_network_aio INTERFACE ${SIMH_INTERFACE})
+    endif()
+endfunction()
+
+function(simh_network_link_libraries)
+    cmake_parse_arguments(SIMH "" "" "PUBLIC;PRIVATE;INTERFACE" ${ARGN})
+    if (SIMH_PUBLIC)
+        target_link_libraries(simh_network PUBLIC ${SIMH_PUBLIC})
+        target_link_libraries(simh_network_aio PUBLIC ${SIMH_PUBLIC})
+    endif()
+    if (SIMH_PRIVATE)
+        target_link_libraries(simh_network PRIVATE ${SIMH_PRIVATE})
+        target_link_libraries(simh_network_aio PRIVATE ${SIMH_PRIVATE})
+    endif()
+    if (SIMH_INTERFACE)
+        target_link_libraries(simh_network INTERFACE ${SIMH_INTERFACE})
+        target_link_libraries(simh_network_aio INTERFACE ${SIMH_INTERFACE})
+    endif()
+endfunction()
 
 ## Ubuntu 16.04 -- when we find the SDL2 library, there are trailing spaces. Strip
 ## spaces from SDL2_LIBRARIES (and potentially others as we find them).
@@ -236,67 +319,130 @@ endif ()
 
 
 if (WITH_NETWORK)
+    ## Basic network support functions and UDP-based Ethernet
+    simh_network_sources(sim_ether.c sim_networks/net_support.c sim_networks/udp_eth.c)
+    if (WIN32)
+        simh_network_sources(sim_networks/win32_utilities.c)
+    endif ()
+    simh_network_link_libraries(PUBLIC os_features thread_lib)
+
+    ## Assume that SIMH will use the dynamically loaded pcap functions,
+    ## the libpcap-devel's libraries are found.
     set(network_runtime USE_SHARED)
-    ## pcap is special: Headers only and dynamically loaded.
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/include"
+    )
+
+    set(pcap_platform)
     if (WITH_PCAP)
         find_package(PCAP)
 
         if (NOT PCAP_FOUND)
-            list(APPEND NETWORK_PKG_STATUS "PCAP dynamic (unpacked)")
+            if (NOT WIN32)
+                set(pcap_platform "PCAP headers")
 
-            message(STATUS "Downloading ${LIBPCAP_SOURCE_URL}")
-            message(STATUS "Destination ${CMAKE_BINARY_DIR}/libpcap")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/libpcap"
-                RESULT_VARIABLE LIBPCAP_MKDIR
-            )
-            if (NOT (${LIBPCAP_MKDIR} EQUAL 0))
-                message(FATAL_ERROR "Could not create ${CMAKE_CMAKE_BINARY_DIR}/libpcap")
-            endif (NOT (${LIBPCAP_MKDIR} EQUAL 0))
-
-            file(DOWNLOAD "${LIBPCAP_SOURCE_URL}" "${CMAKE_BINARY_DIR}/libpcap/libpcap.${LIBPCAP_ARCHIVE_TYPE}"
-                    STATUS LIBPCAP_DOWNLOAD
+                message(STATUS "Downloading ${LIBPCAP_SOURCE_URL}")
+                message(STATUS "Destination ${CMAKE_BINARY_DIR}/libpcap")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/libpcap"
+                    RESULT_VARIABLE LIBPCAP_MKDIR
                 )
-            list(GET LIBPCAP_DOWNLOAD 0 LIBPCAP_DL_STATUS)
-            if (NOT (${LIBPCAP_DL_STATUS} EQUAL 0))
-                list(GET LIBPCAP_DOWNLOAD 1 LIBPCAP_DL_ERROR)
-                message(FATAL_ERROR "Download failed: ${LIBPCAP_DL_ERROR}")
-            endif (NOT (${LIBPCAP_DL_STATUS} EQUAL 0))
+                if (NOT (${LIBPCAP_MKDIR} EQUAL 0))
+                    message(FATAL_ERROR "Could not create ${CMAKE_CMAKE_BINARY_DIR}/libpcap")
+                endif (NOT (${LIBPCAP_MKDIR} EQUAL 0))
 
-            message(STATUS "Extracting headers ${LIBPCAP_SOURCE_URL}")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E tar xvf "${CMAKE_BINARY_DIR}/libpcap/libpcap.${LIBPCAP_ARCHIVE_TYPE}"
-                    "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap.h"
-                    "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap/*.h"
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/libpcap"
-                RESULT_VARIABLE LIBPCAP_EXTRACT
-            )
-            if (NOT (${LIBPCAP_EXTRACT} EQUAL 0))
-                message(FATAL_ERROR "Extract failed.")
-            endif (NOT (${LIBPCAP_EXTRACT} EQUAL 0))
+                file(DOWNLOAD "${LIBPCAP_SOURCE_URL}" "${CMAKE_BINARY_DIR}/libpcap/libpcap.${LIBPCAP_ARCHIVE_TYPE}"
+                        STATUS LIBPCAP_DOWNLOAD
+                )
+                list(GET LIBPCAP_DOWNLOAD 0 LIBPCAP_DL_STATUS)
+                if (NOT (${LIBPCAP_DL_STATUS} EQUAL 0))
+                    list(GET LIBPCAP_DOWNLOAD 1 LIBPCAP_DL_ERROR)
+                    message(FATAL_ERROR "Download failed: ${LIBPCAP_DL_ERROR}")
+                endif (NOT (${LIBPCAP_DL_STATUS} EQUAL 0))
 
-            message(STATUS "Copying headers from ${CMAKE_BINARY_DIR}/libpcap/${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap")
-            message(STATUS "Destination ${CMAKE_BINARY_DIR}/include/pcap")
-            execute_process(
-                COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                    "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/"
-                    "${CMAKE_BINARY_DIR}/include/"
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/libpcap"
-                RESULT_VARIABLE LIBPCAP_COPYDIR
-            )
-            if (NOT (${LIBPCAP_COPYDIR} EQUAL 0))
-                message(FATAL_ERROR "Copy failed.")
-            endif (NOT (${LIBPCAP_COPYDIR} EQUAL 0))
+                message(STATUS "Extracting headers ${LIBPCAP_SOURCE_URL}")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E tar xvf "${CMAKE_BINARY_DIR}/libpcap/libpcap.${LIBPCAP_ARCHIVE_TYPE}"
+                        "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap.h"
+                        "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap/*.h"
+                    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/libpcap"
+                    RESULT_VARIABLE LIBPCAP_EXTRACT
+                )
+                if (NOT (${LIBPCAP_EXTRACT} EQUAL 0))
+                    message(FATAL_ERROR "Extract failed.")
+                endif (NOT (${LIBPCAP_EXTRACT} EQUAL 0))
+
+                message(STATUS "Copying headers from ${CMAKE_BINARY_DIR}/libpcap/${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/pcap")
+                message(STATUS "Destination ${CMAKE_BINARY_DIR}/include/pcap")
+                execute_process(
+                    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                        "${LIBPCAP_PROJECT}-${LIBPCAP_ARCHIVE_NAME}-${LIBPCAP_RELEASE}/"
+                        "${CMAKE_BINARY_DIR}/include/"
+                    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/libpcap"
+                    RESULT_VARIABLE LIBPCAP_COPYDIR
+                )
+                if (NOT (${LIBPCAP_COPYDIR} EQUAL 0))
+                    message(FATAL_ERROR "Copy failed.")
+                endif (NOT (${LIBPCAP_COPYDIR} EQUAL 0))
+            else ()
+                ## Win32 Npcap path:
+                set(pcap_platform "Win32/Win64 npcap")
+
+                message(STATUS "Downloading ${NPCAP_SOURCE_URL}")
+                message(STATUS "Destination ${CMAKE_BINARY_DIR}/npcap")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/npcap"
+                    RESULT_VARIABLE NPCAP_MKDIR
+                )
+                if (NOT (${NPCAP_MKDIR} EQUAL 0))
+                    message(FATAL_ERROR "Could not create ${CMAKE_CMAKE_BINARY_DIR}/npcap")
+                endif (NOT (${NPCAP_MKDIR} EQUAL 0))
+
+                file(DOWNLOAD "${NPCAP_SOURCE_URL}" "${CMAKE_BINARY_DIR}/npcap/npcap.${NPCAP_ARCHIVE_TYPE}"
+                        STATUS NPCAP_DOWNLOAD
+                )
+                list(GET NPCAP_DOWNLOAD 0 NPCAP_DL_STATUS)
+                if (NOT (${NPCAP_DL_STATUS} EQUAL 0))
+                    list(GET NPCAP_DOWNLOAD 1 NPCAP_DL_ERROR)
+                    message(FATAL_ERROR "Download failed: ${NPCAP_DL_ERROR}")
+                endif ()
+
+                message(STATUS "Extracting headers ${NPCAP_SOURCE_URL}")
+                execute_process(
+                    # Can also include"Lib/"
+                    COMMAND ${CMAKE_COMMAND} -E tar xvf "${CMAKE_BINARY_DIR}/npcap/npcap.${NPCAP_ARCHIVE_TYPE}"
+                        "Include/"
+                    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/npcap"
+                    RESULT_VARIABLE NPCAP_EXTRACT
+                )
+                if (NOT (${NPCAP_EXTRACT} EQUAL 0))
+                    message(FATAL_ERROR "Extract failed.")
+                endif ()
+
+                message(STATUS "Copying headers from ${CMAKE_BINARY_DIR}/npcap/Include/pcap")
+                message(STATUS "Destination ${CMAKE_BINARY_DIR}/include/pcap")
+                execute_process(
+                    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                        "Include"
+                        "${CMAKE_BINARY_DIR}/include/"
+                    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/npcap"
+                    RESULT_VARIABLE NPCAP_COPYDIR
+                )
+                if (NOT (${NPCAP_COPYDIR} EQUAL 0))
+                    message(FATAL_ERROR "Copy failed.")
+                endif (NOT (${NPCAP_COPYDIR} EQUAL 0))
+            endif ()
 
             ## And try finding it again...
             find_package(PCAP)
-        else ()
-            list (APPEND NETWORK_PKG_STATUS "PCAP dynamic")
+        elseif (NOT WIN32)
+            set(pcap_platform "PCAP")
+        elseif (WIN32)
+            set(pcap_platform "Win32/Win64 npcap")
         endif ()
 
-
         if (PCAP_FOUND)
-            set(network_runtime USE_SHARED)
             foreach(hdr "${PCAP_INCLUDE_DIRS}")
               file(STRINGS ${hdr}/pcap/pcap.h hdrcontent REGEX "pcap_compile *\\(.*const")
               # message("hdrcontent: ${hdrcontent}")
@@ -304,65 +450,150 @@ if (WITH_NETWORK)
               if (${have_bpf_const} GREATER 0)
                 message(STATUS "pcap_compile requires BPF_CONST_STRING")
                 list(APPEND network_runtime BPF_CONST_STRING)
+                break()
               endif()
             endforeach()
 
-            target_include_directories(simh_network INTERFACE "${PCAP_INCLUDE_DIRS}")
-            target_compile_definitions(simh_network INTERFACE HAVE_PCAP_NETWORK)
+            ## If the PCAP_LIBRARIES are available, just use them. Don't bother with
+            ## dynamic loading. (Ooops! Did we just unpack the npcap libraries? You
+            ## have libpcap-devel installed? Huh. Maybe we use it or something. [sarcasm] :-)
+            if (PCAP_LIBRARIES)
+                set(network_runtime USE_NETWORK)
+                simh_network_link_libraries(INTERFACE "${PCAP_LIBRARIES}")
+            endif ()
+
+            simh_network_sources(sim_networks/pcap_eth.c)
+            simh_network_compile_definitions(PUBLIC HAVE_PCAP_NETWORK)
+            simh_network_include_directories(PUBLIC "${PCAP_INCLUDE_DIRS}")
+
+            if ("USE_SHARED" IN_LIST network_runtime)
+                string(APPEND pcap_platform " dynamic load")
+            else ()
+                string(APPEND pcap_platform " platform libraries")
+            endif ()
+
+            list(APPEND NETWORK_PKG_STATUS ${pcap_platform})
         endif ()
     endif ()
 
-    ## TAP/TUN devices
-    if (WITH_TAP)
-        target_compile_definitions(simh_network INTERFACE ${NETWORK_TUN_DEFS})
-    endif (WITH_TAP)
+    if (WIN32 AND OPENVPN_TUNTAP)
+        find_path(TAPWINDOWS_HEADER
+        NAMES
+            tap-windows.h
+        PATHS
+            $(CMAKE_BINARY_DIR)/include
+        )
+
+        if (NOT TAPWINDOWS_HEADER)
+            message(STATUS "Downloading ${TAPWINDOWS_SOURCE_URL}")
+            message(STATUS "Destination ${CMAKE_BINARY_DIR}/tap-windows")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/tap-windows"
+                RESULT_VARIABLE TAPWINDOWS_MKDIR
+            )
+            if (NOT (${TAPWINDOWS_MKDIR} EQUAL 0))
+                message(FATAL_ERROR "Could not create ${CMAKE_CMAKE_BINARY_DIR}/npcap")
+            endif ()
+
+            file(DOWNLOAD "${TAPWINDOWS_SOURCE_URL}" "${CMAKE_BINARY_DIR}/tap-windows/${TAPWINDOWS_TAR_ARCHIVE}"
+                STATUS TAPWINDOWS_DOWNLOAD
+            )
+            list(GET TAPWINDOWS_DOWNLOAD 0 TAPWINDOWS_DL_STATUS)
+            if (NOT (${TAPWINDOWS_DL_STATUS} EQUAL 0))
+                list(GET TAPWINDOWS_DOWNLOAD 1 TAPWINDOWS_DL_ERROR)
+                message(FATAL_ERROR "Download failed: ${TAPWINDOWS_DL_ERROR}")
+            endif ()
+
+            message(STATUS "Extracting headers ${TAPWINDOWS_SOURCE_URL}")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E tar xvf "${CMAKE_BINARY_DIR}/tap-windows/${TAPWINDOWS_TAR_ARCHIVE}"
+                        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tap-windows"
+                        RESULT_VARIABLE TAPWINDOWS_EXTRACT
+            )
+            if (NOT (${TAPWINDOWS_EXTRACT} EQUAL 0))
+                message(FATAL_ERROR "Extract failed.")
+            endif ()
+
+            message(STATUS "Copying headers from ${CMAKE_BINARY_DIR}/tap-windows")
+            message(STATUS "Destination ${CMAKE_BINARY_DIR}/include/")
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E copy
+                    "tap-windows-master/src/tap-windows.h"
+                    "${CMAKE_BINARY_DIR}/include/"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tap-windows"
+                RESULT_VARIABLE TAPWINDOWS_COPYDIR
+            )
+            if (NOT (${TAPWINDOWS_COPYDIR} EQUAL 0))
+                message(FATAL_ERROR "Copy failed.")
+            endif ()
+        endif ()
+
+        simh_network_compile_definitions(PUBLIC WITH_OPENVPN_TAPTUN)
+        simh_network_include_directories(PUBLIC ${CMAKE_BINARY_DIR}/include)
+        simh_network_sources(
+            sim_networks/openvpn/argv.c
+            sim_networks/openvpn/vpnintfs.c
+            sim_networks/openvpn/opentap.c
+            sim_networks/openvpn/apifuncs.c
+        )
+    endif ()
 
     if (WITH_VDE AND VDE_FOUND)
         if (TARGET PkgConfig::VDE)
-            target_compile_definitions(simh_network INTERFACE $<TARGET_PROPERTY:PkgConfig::VDE,INTERFACE_COMPILE_DEFINITIONS>)
-            target_include_directories(simh_network INTERFACE $<TARGET_PROPERTY:PkgConfig::VDE,INTERFACE_INCLUDE_DIRECTORIES>)
-            target_link_libraries(simh_network INTERFACE PkgConfig::VDE)
+            # simh_network_compile_definitions(PUBLIC $<TARGET_PROPERTY:PkgConfig::VDE,INTERFACE_COMPILE_DEFINITIONS>)
+            # simh_network_include_directories(PUBLIC $<TARGET_PROPERTY:PkgConfig::VDE,INTERFACE_INCLUDE_DIRECTORIES>)
+            simh_network_link_libraries(INTERFACE PkgConfig::VDE)
             list(APPEND NETWORK_PKG_STATUS "pkg-config VDE")
         else ()
-            target_include_directories(simh_network INTERFACE "${VDEPLUG_INCLUDE_DIRS}")
-            target_link_libraries(simh_network INTERFACE "${VDEPLUG_LIBRARY}")
+            simh_network_include_directories(PUBLIC "${VDEPLUG_INCLUDE_DIRS}")
+            simh_network_link_libraries(INTERFACE "${VDEPLUG_LIBRARY}")
             list(APPEND NETWORK_PKG_STATUS "detected VDE")
         endif ()
 
-        target_compile_definitions(simh_network INTERFACE HAVE_VDE_NETWORK)
+        simh_network_sources(sim_networks/vde_eth.c)
+        simh_network_compile_definitions(PUBLIC HAVE_VDE_NETWORK)
     endif ()
 
     if (WITH_TAP)
         if (HAVE_TAP_NETWORK)
-            target_compile_definitions(simh_network INTERFACE HAVE_TAP_NETWORK)
+            simh_network_compile_definitions(PUBLIC ${NETWORK_TUN_DEFS} HAVE_TAP_NETWORK)
+            simh_network_sources(sim_networks/tuntap_eth.c)
 
             if (HAVE_BSDTUNTAP)
-                target_compile_definitions(simh_network INTERFACE HAVE_BSDTUNTAP)
+                simh_network_compile_definitions(PUBLIC HAVE_BSDTUNTAP)
                 list(APPEND NETWORK_PKG_STATUS "BSD TUN/TAP")
-            else (HAVE_BSDTUNTAP)
+            else ()
                 list(APPEND NETWORK_PKG_STATUS "TAP")
-            endif (HAVE_BSDTUNTAP)
-   
+            endif ()
         endif (HAVE_TAP_NETWORK)
     endif (WITH_TAP)
 
     if (WITH_NETWORK AND WITH_SLIRP)
-        target_include_directories(simh_network
-            INTERFACE
-                ${CMAKE_SOURCE_DIR}/sim_slirp
+       simh_network_sources(sim_networks/sim_slirp/sim_slirp.c sim_networks/sim_slirp/slirp_poll.c)
+        simh_network_compile_definitions(PUBLIC HAVE_SLIRP_NETWORK LIBSLIRP_STATIC)
+
+        if (HAVE_INET_PTON)
+            ## libslirp detects HAVE_INET_PTON for us.
+            simh_network_compile_definitions(PUBLIC HAVE_INET_PTON)
+        endif()
+
+        simh_network_include_directories(
+            PUBLIC
+                ${CMAKE_SOURCE_DIR}/sim_networks/sim_slirp
                 ${CMAKE_SOURCE_DIR}/libslirp/src
         )
-        target_link_libraries(simh_network INTERFACE slirp_static)
+
+        simh_network_link_libraries(PUBLIC slirp_static)
         list(APPEND NETWORK_PKG_STATUS "NAT(SLiRP)")
     endif ()
 
-    ## Finally, set the network runtime
-    if (NOT network_runtime)
+    ## Finally, set the network runtime if not already set.
+    if (NOT ("USE_SHARED" IN_LIST network_runtime) AND NOT ("USE_NETWORK" IN_LIST network_runtime))
         ## Default to USE_SHARED... USE_NETWORK is deprecated.
-        set(network_runtime USE_SHARED)
-    endif (NOT network_runtime)
+        list(APPEND network_runtime "USE_SHARED")
+    endif ()
 
-    target_compile_definitions(simh_network INTERFACE ${network_runtime})
+    simh_network_compile_definitions(PUBLIC ${network_runtime})
 
     set(BUILD_WITH_NETWORK TRUE)
 else (WITH_NETWORK)

@@ -42,6 +42,7 @@ add_simulator(pdp10
     DEFINES
         VM_PDP10
     FEATURE_INT64
+    FEATURE_NETWORK
     USES_AIO
     LABEL PDP10
     NO_INSTALL
@@ -115,6 +116,7 @@ add_simulator(pdp10-ka
     FEATURE_INT64
     FEATURE_VIDEO
     FEATURE_DISPLAY
+    FEATURE_NETWORK
     USES_AIO
     LABEL PDP10
     PKG_FAMILY pdp10_family
@@ -163,6 +165,7 @@ add_simulator(pdp10-ki
     FEATURE_INT64
     FEATURE_VIDEO
     FEATURE_DISPLAY
+    FEATURE_NETWORK
     USES_AIO
     LABEL PDP10
     PKG_FAMILY pdp10_family
@@ -196,6 +199,7 @@ add_simulator(pdp10-kl
     DEFINES
         KL=1
     FEATURE_INT64
+    FEATURE_NETWORK
     USES_AIO
     LABEL PDP10
     PKG_FAMILY pdp10_family
@@ -224,6 +228,7 @@ add_simulator(pdp10-ks
     DEFINES
         KS=1
     FEATURE_INT64
+    FEATURE_NETWORK
     USES_AIO
     LABEL PDP10
     PKG_FAMILY pdp10_family

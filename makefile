@@ -110,6 +110,15 @@ SIMHD = .
 LIBSLIRP_DIR=${SIMHD}/libslirp
 LIBSLIRP_SRC=${LIBSLIRP_DIR}/src
 
+# Network support sources: Accumulated simulated Ethernet "drivers"
+NETSUPPORT_SRC=${SIMHD}/sim_networks
+NET_SOURCES=${NETSUPPORT_SRC}/net_support.c ${NETSUPPORT_SRC}/udp_eth.c
+
+# Network support libraries
+NETWORK_LDFLAGS=${BIN}simh_network.dir/simh_network.a
+# And network dependencies
+NETSUPPORT_DEPS=${BIN}simh_network.dir/simh_network.a
+
 # SYS_LDFLAGS: System libraries, e.g., -lm and -lpthread, that should appear
 # at the end of the compiler's command line.
 SYS_LDFLAGS =
@@ -872,6 +881,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
       endif
       NETWORK_CCDEFS += -DHAVE_PCAP_NETWORK -I$(dir $(call find_include,pcap)) $(BPF_CONST_STRING)
       NETWORK_LAN_FEATURES += PCAP
+      NET_SOURCES += ${NETSUPPORT_SRC}/pcap_eth.c
       ifneq (,$(call find_lib,$(PCAPLIB)))
         ifneq ($(USE_NETWORK),) # Network support specified on the GNU make command line
           NETWORK_CCDEFS += -DUSE_NETWORK
@@ -973,6 +983,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
             $(error using libpcap: $(call find_include,pcap) missing $(PCAPLIB).${LIBEXT})
           endif
           NETWORK_LAN_FEATURES += PCAP
+          NET_SOURCES += ${NETSUPPORT_SRC}/pcap_eth.c
         endif
         LIBEXT = $(LIBEXTSAVE)
       else
@@ -1004,7 +1015,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
         $(info select()-ing for sockets)
         sim_use_select=1
     endif
-    OS_CCDEFS += -DSIM_USE_SELECT=${sim_use_select} -DSIM_USE_POLL=${sim_use_poll}
+    NETWORK_CCDEFS += -DSIM_USE_SELECT=${sim_use_select} -DSIM_USE_POLL=${sim_use_poll}
     # Consider other network connections
     ifneq (,$(call find_lib,vdeplug))
       # libvdeplug requires the use of the OS provided libpcap
@@ -1013,6 +1024,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
           # Provide support for vde networking
           NETWORK_CCDEFS += -DHAVE_VDE_NETWORK
           NETWORK_LAN_FEATURES += VDE
+          NET_SOURCES += ${NETSUPPORT_SRC}/vde_eth.c
           ifeq (,$(findstring USE_NETWORK,$(NETWORK_CCDEFS))$(findstring USE_SHARED,$(NETWORK_CCDEFS)))
             NETWORK_CCDEFS += -DUSE_NETWORK
           endif
@@ -1082,6 +1094,7 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
       # Provide support for Tap networking on Linux
       NETWORK_CCDEFS += -DHAVE_TAP_NETWORK
       NETWORK_LAN_FEATURES += TAP
+      NET_SOURCES += ${NETSUPPORT_SRC}/tuntap_eth.c
       ifeq (,$(findstring USE_NETWORK,$(NETWORK_CCDEFS))$(findstring USE_SHARED,$(NETWORK_CCDEFS)))
         NETWORK_CCDEFS += -DUSE_NETWORK
       endif
@@ -1090,15 +1103,17 @@ ifeq (${WIN32},)  #*nix Environments (&& cygwin)
       # Provide support for Tap networking on BSD platforms (including OS X)
       NETWORK_CCDEFS += -DHAVE_TAP_NETWORK -DHAVE_BSDTUNTAP
       NETWORK_LAN_FEATURES += TAP
+      NET_SOURCES += ${NETSUPPORT_SRC}/tuntap_eth.c
       ifeq (,$(findstring USE_NETWORK,$(NETWORK_CCDEFS))$(findstring USE_SHARED,$(NETWORK_CCDEFS)))
         NETWORK_CCDEFS += -DUSE_NETWORK
       endif
     endif
     ifeq (libslirp,$(shell if ${TEST} -e ${LIBSLIRP_DIR}; then echo libslirp; fi))
-      SLIRP_DEP=${BIN}libslirp.dir/libslirp.a
-      NETWORK_CCDEFS += -I${LIBSLIRP_SRC} -I${SIMHD}/libslirp/minimal -I${SIMHD}/sim_slirp -I${SIMHD}/sim_slirp/config \
-		      -DHAVE_SLIRP_NETWORK
-      NETWORK_CCDEFS += sim_slirp/sim_slirp.c sim_slirp/slirp_poll.c
+      NETSUPPORT_DEPS += ${BIN}libslirp.dir/libslirp.a
+      NETWORK_CCDEFS += -I${LIBSLIRP_SRC} -I${SIMHD}/libslirp/minimal -I${NETSUPPORT_SRC}/sim_slirp \
+                        -I${NETSUPPORT_SRC}/sim_slirp/config \
+		        -DHAVE_SLIRP_NETWORK
+      NET_SOURCES += ${NETSUPPORT_SRC}/sim_slirp/sim_slirp.c ${NETSUPPORT_SRC}/sim_slirp/slirp_poll.c
       NETWORK_LDFLAGS += ${BIN}libslirp.dir/libslirp.a
       NETWORK_LAN_FEATURES += NAT(SLiRP)
       ifeq (Darwin,$(OSTYPE))
@@ -1193,12 +1208,14 @@ else
     NETWORK_OPT = -DUSE_SHARED -I../windows-build/winpcap/Wpdpack/include
     NETWORK_FEATURES = - dynamic networking support using windows-build provided libpcap components
     NETWORK_LAN_FEATURES += PCAP
+    NET_SOURCES += ${NETSUPPORT_SRC}/pcap_eth.c
   else
     ifneq (,$(call find_include,pcap))
       NETWORK_LDFLAGS =
       NETWORK_OPT = -DUSE_SHARED
       NETWORK_FEATURES = - dynamic networking support using libpcap components found in the MinGW directories
       NETWORK_LAN_FEATURES += PCAP
+      NET_SOURCES += ${NETSUPPORT_SRC}/pcap_eth.c
     endif
   endif
   ifneq (,$(VIDEO_USEFUL))
@@ -1344,10 +1361,11 @@ else
       $(info using libpcre: $(abspath ../windows-build/PCRE/lib/pcre.a) $(abspath ../windows-build/PCRE/include/pcre.h))
     endif
     ifeq (libslirp,$(shell if ${TEST} -e ${LIBSLIRP_DIR}; then echo libslirp; fi))
-      SLIRP_DEP=libslirp-dep
-      NETWORK_CCDEFS += -I${LIBSLIRP_SRC} -I${SIMHD}/libslirp/minimal -I${SIMHD}/sim_slirp -I${SIMHD}/sim_slirp/config \
-		      -DHAVE_SLIRP_NETWORK
-      NETWORK_CCDEFS += sim_slirp/sim_slirp.c sim_slirp/slirp_poll.c
+      NETSUPPORT_DEPS += ${BIN}libslirp.dir/libslirp.a
+      NETWORK_CCDEFS += -I${LIBSLIRP_SRC} -I${SIMHD}/libslirp/minimal -I${NETSUPPORT_SRC}/sim_slirp \
+                        -I${NETSUPPORT_SRC}/sim_slirp/config \
+		        -DHAVE_SLIRP_NETWORK
+      NET_SOURCES += ${NETSUPPORT_SRC}/sim_slirp/sim_slirp.c ${NETSUPPORT_SRC}/sim_slirp/slirp_poll.c
       NETWORK_LDFLAGS += ${BIN}libslirp.dir/libslirp.a
       NETWORK_LAN_FEATURES += NAT(SLiRP)
     endif
@@ -2315,8 +2333,8 @@ experimental : ${EXPERIMENTAL}
 
 clean ::
 ifeq (${WIN32},)
-	${RM} -rf ${SIMHD}/sim_slirp/config/glib-endian.h ${SIMHD}/sim_slirp/config/libslirp-version.h \
-	    ${SIMHD}/sim_slirp/config/mk-glib-endian ${BIN}
+	${RM} -rf ${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h ${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h \
+	    ${NETSUPPORT_SRC}/sim_slirp/config/mk-glib-endian ${BIN}
 else
 	if exist BIN rmdir /s /q BIN
 endif
@@ -2389,7 +2407,7 @@ endif
 
 pdp10 : ${BIN}pdp10${EXE}
 
-${BIN}pdp10${EXE} : ${PDP10} ${SIM} ${SLIRP_DEP}
+${BIN}pdp10${EXE} : ${PDP10} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${PDP10} ${SIM} ${PDP10_OPT} ${CC_OUTSPEC} ${PDP10_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},pdp10))
@@ -2422,7 +2440,7 @@ endif
 
 pdp11 : ${BIN}pdp11${EXE}
 
-${BIN}pdp11${EXE} : ${PDP11} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}pdp11${EXE} : ${PDP11} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${PDP11} ${SIM} ${PDP11_OPT} ${CC_OUTSPEC} ${PDP11_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP11D},pdp11))
@@ -2442,7 +2460,7 @@ microvax3900 : vax
 
 vax : ${BIN}vax${EXE}
 
-${BIN}vax${EXE} : ${VAX} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax${EXE} : ${VAX} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX} ${SIM} ${VAX_OPT} ${CC_OUTSPEC} ${VAX_LDFLAGS} ${LDFLAGS}
 ifeq (${WIN32},)
@@ -2456,7 +2474,7 @@ endif
 
 microvax2000 : ${BIN}microvax2000${EXE}
 
-${BIN}microvax2000${EXE} : ${VAX410} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax2000${EXE} : ${VAX410} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX410} ${SCSI} ${SIM} ${VAX410_OPT} -o $@ ${VAX410_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2465,7 +2483,7 @@ endif
 
 infoserver100 : ${BIN}infoserver100${EXE}
 
-${BIN}infoserver100${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}infoserver100${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX411_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2474,7 +2492,7 @@ endif
 
 infoserver150vxt : ${BIN}infoserver150vxt${EXE}
 
-${BIN}infoserver150vxt${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}infoserver150vxt${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX412_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2483,7 +2501,7 @@ endif
 
 microvax3100 : ${BIN}microvax3100${EXE}
 
-${BIN}microvax3100${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax3100${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX41A_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2492,7 +2510,7 @@ endif
 
 microvax3100e : ${BIN}microvax3100e${EXE}
 
-${BIN}microvax3100e${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax3100e${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX41D_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2501,7 +2519,7 @@ endif
 
 vaxstation3100m30 : ${BIN}vaxstation3100m30${EXE}
 
-${BIN}vaxstation3100m30${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vaxstation3100m30${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX42A_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2510,7 +2528,7 @@ endif
 
 vaxstation3100m38 : ${BIN}vaxstation3100m38${EXE}
 
-${BIN}vaxstation3100m38${EXE} : ${VAX420} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vaxstation3100m38${EXE} : ${VAX420} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX420} ${SCSI} ${SIM} ${VAX42B_OPT} -o $@ ${VAX420_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2519,7 +2537,7 @@ endif
 
 vaxstation3100m76 : ${BIN}vaxstation3100m76${EXE}
 
-${BIN}vaxstation3100m76${EXE} : ${VAX43} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vaxstation3100m76${EXE} : ${VAX43} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX43} ${SCSI} ${SIM} ${VAX43_OPT} -o $@ ${VAX43_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2528,7 +2546,7 @@ endif
 
 vaxstation4000m60 : ${BIN}vaxstation4000m60${EXE}
 
-${BIN}vaxstation4000m60${EXE} : ${VAX440} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vaxstation4000m60${EXE} : ${VAX440} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX440} ${SCSI} ${SIM} ${VAX46_OPT} -o $@ ${VAX440_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2537,7 +2555,7 @@ endif
 
 microvax3100m80 : ${BIN}microvax3100m80${EXE}
 
-${BIN}microvax3100m80${EXE} : ${VAX440} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax3100m80${EXE} : ${VAX440} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX440} ${SCSI} ${SIM} ${VAX47_OPT} -o $@ ${VAX440_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2546,7 +2564,7 @@ endif
 
 vaxstation4000vlc : ${BIN}vaxstation4000vlc${EXE}
 
-${BIN}vaxstation4000vlc${EXE} : ${VAX440} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vaxstation4000vlc${EXE} : ${VAX440} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX440} ${SCSI} ${SIM} ${VAX48_OPT} -o $@ ${VAX440_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2555,7 +2573,7 @@ endif
 
 infoserver1000 : ${BIN}infoserver1000${EXE}
 
-${BIN}infoserver1000${EXE} : ${IS1000} ${SCSI} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}infoserver1000${EXE} : ${IS1000} ${SCSI} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${IS1000} ${SCSI} ${SIM} ${IS1000_OPT} -o $@ ${IS1000_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2564,7 +2582,7 @@ endif
 
 microvax1 : ${BIN}microvax1${EXE}
 
-${BIN}microvax1${EXE} : ${VAX610} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax1${EXE} : ${VAX610} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX610} ${SIM} ${VAX610_OPT} -o $@ ${VAX610_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2573,7 +2591,7 @@ endif
 
 rtvax1000 : ${BIN}rtvax1000${EXE}
 
-${BIN}rtvax1000${EXE} : ${VAX630} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}rtvax1000${EXE} : ${VAX630} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX630} ${SIM} ${VAX620_OPT} -o $@ ${VAX620_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2582,7 +2600,7 @@ endif
 
 microvax2 : ${BIN}microvax2${EXE}
 
-${BIN}microvax2${EXE} : ${VAX630} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}microvax2${EXE} : ${VAX630} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX630} ${SIM} ${VAX630_OPT} -o $@ ${VAX630_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2591,7 +2609,7 @@ endif
 
 vax730 : ${BIN}vax730${EXE}
 
-${BIN}vax730${EXE} : ${VAX730} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax730${EXE} : ${VAX730} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX730} ${SIM} ${VAX730_OPT} -o $@ ${VAX730_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2600,7 +2618,7 @@ endif
 
 vax750 : ${BIN}vax750${EXE}
 
-${BIN}vax750${EXE} : ${VAX750} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax750${EXE} : ${VAX750} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX750} ${SIM} ${VAX750_OPT} -o $@ ${VAX750_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2609,7 +2627,7 @@ endif
 
 vax780 : ${BIN}vax780${EXE}
 
-${BIN}vax780${EXE} : ${VAX780} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax780${EXE} : ${VAX780} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX780} ${SIM} ${VAX780_OPT} ${CC_OUTSPEC} ${VAX780_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2618,7 +2636,7 @@ endif
 
 vax8200 : ${BIN}vax8200${EXE}
 
-${BIN}vax8200${EXE} : ${VAX8200} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax8200${EXE} : ${VAX8200} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX8200} ${SIM} ${VAX8200_OPT} ${CC_OUTSPEC} ${VAX780_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2627,7 +2645,7 @@ endif
 
 vax8600 : ${BIN}vax8600${EXE}
 
-${BIN}vax8600${EXE} : ${VAX8600} ${SIM} ${SLIRP_DEP} ${BUILD_ROMS}
+${BIN}vax8600${EXE} : ${VAX8600} ${SIM} ${NETSUPPORT_DEPS} ${BUILD_ROMS}
 	${MKDIRBIN}
 	${CC} ${VAX8600} ${SIM} ${VAX8600_OPT} ${CC_OUTSPEC} ${VAX8600_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${VAXD},vax-diag))
@@ -2753,7 +2771,7 @@ endif
 
 sel32: ${BIN}sel32${EXE}
 
-${BIN}sel32${EXE}: ${SEL32} ${SIM} ${SLIRP_DEP}
+${BIN}sel32${EXE}: ${SEL32} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${SEL32} ${SIM} ${SEL32_OPT} $(CC_OUTSPEC) ${SEL32_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${SEL32D},sel32))
@@ -2968,7 +2986,7 @@ endif
 
 3b2 : ${BIN}3b2${EXE}
 
-${BIN}3b2${EXE} : ${ATT3B2M400} ${SIM} ${SLIRP_DEP}
+${BIN}3b2${EXE} : ${ATT3B2M400} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${ATT3B2M400} ${SIM} ${ATT3B2M400_OPT} ${CC_OUTSPEC} ${ATT3B2M400_LDFLAGS} ${LDFLAGS}
 ifeq (${WIN32},)
@@ -2982,7 +3000,7 @@ endif
 
 3b2-700 : ${BIN}3b2-700${EXE}
 
-${BIN}3b2-700${EXE} : ${ATT3B2M700} ${SIM} ${SLIRP_DEP}
+${BIN}3b2-700${EXE} : ${ATT3B2M700} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${ATT3B2M700} ${SCSI} ${SIM} ${ATT3B2M700_OPT} ${CC_OUTSPEC} ${ATT3B2M700_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${ATT3B2D},3b2-700))
@@ -3063,7 +3081,7 @@ endif
 
 pdp10-ka : ${BIN}pdp10-ka${EXE}
 
-${BIN}pdp10-ka${EXE} : ${KA10} ${SIM} ${SLIRP_DEP}
+${BIN}pdp10-ka${EXE} : ${KA10} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${KA10} ${KA10_DPY} ${SIM} ${KA10_OPT} ${CC_OUTSPEC} ${KA10_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},ka10))
@@ -3072,7 +3090,7 @@ endif
 
 pdp10-ki : ${BIN}pdp10-ki${EXE}
 
-${BIN}pdp10-ki${EXE} : ${KI10} ${SIM} ${SLIRP_DEP}
+${BIN}pdp10-ki${EXE} : ${KI10} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${KI10} ${KI10_DPY} ${SIM} ${KI10_OPT} ${CC_OUTSPEC} ${KI10_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},ki10))
@@ -3081,7 +3099,7 @@ endif
 
 pdp10-kl : ${BIN}pdp10-kl${EXE}
 
-${BIN}pdp10-kl${EXE} : ${KL10} ${SIM} ${SLIRP_DEP}
+${BIN}pdp10-kl${EXE} : ${KL10} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${KL10} ${SIM} ${KL10_OPT} ${CC_OUTSPEC} ${KL10_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},kl10))
@@ -3090,7 +3108,7 @@ endif
 
 pdp10-ks : ${BIN}pdp10-ks${EXE}
 
-${BIN}pdp10-ks${EXE} : ${KS10} ${SIM} ${SLIRP_DEP}
+${BIN}pdp10-ks${EXE} : ${KS10} ${SIM} ${NETSUPPORT_DEPS}
 	${MKDIRBIN}
 	${CC} ${KS10} ${SIM} ${KS10_OPT} ${CC_OUTSPEC} ${NETWORK_LDFLAGS} ${LDFLAGS}
 ifneq (,$(call find_test,${PDP10D},ks10))
@@ -3106,14 +3124,16 @@ ${BIN}frontpaneltest${EXE} : frontpanel/FrontPanelTest.c sim_sock.c sim_frontpan
 	${MKDIRBIN}
 	${CC} frontpanel/FrontPanelTest.c sim_sock.c sim_frontpanel.c ${CC_OUTSPEC} ${LDFLAGS} ${OS_CURSES_DEFS}
 
-## libslirp library and configuration:
+## Utility macros:
 
 RANLIB=$(shell which ranlib)
 ifeq (,${RANLIB})
 RANLIB=:
 endif
 
-LIBSLIRP_CONFIG_SRC=${SIMHD}/sim_slirp/config/libslirp_config.c
+## libslirp library and configuration:
+
+LIBSLIRP_CONFIG_SRC=${NETSUPPORT_SRC}/sim_slirp/config/libslirp_config.c
 LIBSLIRP_CONFIG_TEST=${BIN}libslirp.dir/libslirp_config
 
 test_feature = \
@@ -3145,7 +3165,7 @@ ifneq ($(call test_feature,TEST_INET_PTON,inet_pton),)
   LIBSLIRP_FEATURES += -DHAVE_INET_PTON
 endif
 
-BUILD_LIBSLIRP_INCS=-I ${LIBSLIRP_SRC} -I ${LIBSLIRP_DIR}/minimal -I ${SIMHD}/sim_slirp/config
+BUILD_LIBSLIRP_INCS=-I ${LIBSLIRP_SRC} -I ${LIBSLIRP_DIR}/minimal -I ${NETSUPPORT_SRC}/sim_slirp/config
 
 ${BIN}libslirp.dir/%.o: ${LIBSLIRP_SRC}/%.c
 	@mkdir -p ${BIN}libslirp.dir
@@ -3156,19 +3176,42 @@ ${BIN}libslirp.dir/%.o: ${LIBSLIRP_DIR}/minimal/%.c
 	${GCC} ${CC_STD} ${CFLAGS_G} ${CFLAGS_O} ${CFLAGS_I} $(strip ${LIBSLIRP_FEATURES}) ${BUILD_LIBSLIRP_INCS} -o $@ -c $<
 
 ${BIN}libslirp.dir/libslirp.a: \
-		${SIMHD}/sim_slirp/config/libslirp-version.h \
-		${SIMHD}/sim_slirp/config/glib-endian.h \
+		${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h \
+		${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h \
 		${LIBSLIRP_OBJS}
 	${AR} rv $@ ${LIBSLIRP_OBJS}
 	${RANLIB} $@
 
-${SIMHD}/sim_slirp/config/libslirp-version.h: ${SIMHD}/sim_slirp/config/libslirp-version.awk
-	@ echo "Updating ${SIMHD}/sim_slirp/config/libslirp-version.h"
-	@ awk -f ${SIMHD}/sim_slirp/config/libslirp-version.awk ${SIMHD}/libslirp/meson.build > ${SIMHD}/sim_slirp/config/libslirp-version.h
+${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h: ${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.awk
+	@ echo "Updating ${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h"
+	@ awk -f ${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.awk ${SIMHD}/libslirp/meson.build > ${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h
 
-${SIMHD}/sim_slirp/config/glib-endian.h: ${SIMHD}/sim_slirp/config/mk-glib-endian
-	@ echo "Updating ${SIMHD}/sim_slirp/config/glib-endian.h"
-	@ ${SIMHD}/sim_slirp/config/mk-glib-endian > ${SIMHD}/sim_slirp/config/glib-endian.h
+${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h: ${NETSUPPORT_SRC}/sim_slirp/config/mk-glib-endian
+	@ echo "Updating ${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h"
+	@ ${NETSUPPORT_SRC}/sim_slirp/config/mk-glib-endian > ${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h
 
-${SIMHD}/sim_slirp/config/mk-glib-endian: ${SIMHD}/sim_slirp/config/mk-glib-endian.c
+${NETSUPPORT_SRC}/sim_slirp/config/mk-glib-endian: ${NETSUPPORT_SRC}/sim_slirp/config/mk-glib-endian.c
 	${GCC} ${CC_STD} ${CFLAGS_G} ${CFLAGS_O} ${CFLAGS_I} -o $@ $<
+
+## simh_network library:
+
+NETSUPPORT_OBJS=${subst ${NETSUPPORT_SRC},${BIN}simh_network.dir,${NET_SOURCES:.c=.o}}
+
+# LIBSLIRP_OBJS=${subst ${LIBSLIRP_SRC},${BIN}libslirp.dir,${LIBSLIRP_SOURCES:.c=.o}} \
+#               ${subst ${LIBSLIRP_DIR}/minimal,${BIN}libslirp.dir,${LIBSLIRP_STUB_SRC:.c=.o}}
+
+${BIN}simh_network.dir/sim_slirp/%.o: ${NETSUPPORT_SRC}/sim_slirp/%.c
+	@test -d ${BIN}simh_network.dir/sim_slirp || mkdir -p ${BIN}simh_network.dir/sim_slirp
+	${GCC} ${CC_STD} ${CFLAGS_G} ${CFLAGS_O} ${CFLAGS_I} ${OS_CCDEFS} ${NETWORK_OPT} -o $@ -c $<
+
+${BIN}simh_network.dir/%.o: ${NETSUPPORT_SRC}/%.c
+	@test -d ${BIN}simh_network.dir || mkdir -p ${BIN}simh_network.dir
+	@test -d ${BIN}simh_network.dir/sim_slirp || mkdir -p ${BIN}simh_network.dir/sim_slirp
+	${GCC} ${CC_STD} ${CFLAGS_G} ${CFLAGS_O} ${CFLAGS_I} ${OS_CCDEFS} ${NETWORK_OPT} -o $@ -c $<
+
+${BIN}simh_network.dir/simh_network.a: \
+		${NETSUPPORT_SRC}/sim_slirp/config/libslirp-version.h \
+		${NETSUPPORT_SRC}/sim_slirp/config/glib-endian.h \
+       		${NETSUPPORT_OBJS}
+	${AR} rv $@ ${NETSUPPORT_OBJS}
+	${RANLIB} $@

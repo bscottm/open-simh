@@ -15,6 +15,8 @@ class SIMHBasicSimulator:
         self.int64 = False
         self.full64 = False
         self.buildrom = buildrom
+        ## self.uses_network   -> True if the simulator uses networking
+        self.uses_network = False
         ## self.has_display    -> True if there is a specific display used by the simulator.
         self.has_display = False
         ## self.uses_video     -> True if USE_SIM_VIDEO appears in the simulator's preprocessor defn's.
@@ -72,6 +74,9 @@ class SIMHBasicSimulator:
                     pass
 
         self.uses_video = 'USE_SIM_VIDEO' in self.defines or self.has_display
+
+        ## Networking:
+        self.uses_network = 'USE_SHARED' in self.defines or 'USE_NETWORK' in self.defines
 
         ## AIO support:
         self.uses_aio   = 'SIM_ASYNCH_IO' in self.defines
@@ -132,6 +137,8 @@ class SIMHBasicSimulator:
             stream.write('\n' + indent4 + "FEATURE_DISPLAY")
         if self.besm6_sdl_hack:
             stream.write('\n' + indent4 + "BESM6_SDL_HACK")
+        if self.uses_network:
+            stream.write('\n' + indent4 + "FEATURE_NETWORK")
         if self.uses_aio:
             stream.write('\n' + indent4 + "USES_AIO")
         if self.test_args:

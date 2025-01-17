@@ -1221,10 +1221,10 @@ extern int32 sim_asynch_inst_latency;
 #define AIO_MAIN_THREAD (pthread_equal ( pthread_self(), sim_asynch_main_threadid ))
 #define AIO_LOCK                                                  \
     pthread_mutex_lock(&sim_asynch_lock)
-#define AIO_UNLOCK pthread_mutex_unlock(&sim_asynch_lock)
+#define AIO_UNLOCK       pthread_mutex_unlock(&sim_asynch_lock)
 #define AIO_DEBUG_LOCK   pthread_mutex_lock(&sim_debug_lock)
 #define AIO_DEBUG_UNLOCK pthread_mutex_unlock(&sim_debug_lock)
-#define AIO_IS_ACTIVE(uptr) (((uptr)->a_is_active ? (uptr)->a_is_active (uptr) : FALSE) || ((uptr)->a_next))
+#define AIO_IS_ACTIVE(uptr) sim_aio_pending(uptr)
 #if defined(SIM_ASYNCH_MUX)
 #define AIO_CANCEL(uptr)                                      \
     if (((uptr)->dynflags & UNIT_TM_POLL) &&                  \
@@ -1390,8 +1390,9 @@ extern int32 sim_asynch_inst_latency;
 #define AIO_CHECK_EVENT                                                \
     do {                                                               \
       if (0 > sim_atomic_dec(&sim_asynch_check)) {                     \
-	AIO_UPDATE_QUEUE;                                              \
-	}                                                              \
+	    AIO_UPDATE_QUEUE;                                              \
+        sim_atomic_put(&sim_asynch_check, sim_asynch_inst_latency);    \
+	  }                                                                \
     } while (0)
 #define AIO_SET_INTERRUPT_LATENCY(instpersec)                                                    \
     do {                                                                                         \
