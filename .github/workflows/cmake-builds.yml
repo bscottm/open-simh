@@ -17,7 +17,7 @@ jobs:
       # (*) "artefact" for the rest of the Anglosphere
       #-
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-latest]
+        os: [ubuntu-22.04, ubuntu-latest]
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
@@ -58,7 +58,7 @@ jobs:
       #
       # (*) "artefact" for the rest of the Anglosphere -
       matrix:
-        os: [macos-12, macos-13, macos-latest]
+        os: [macos-13, macos-14, macos-latest]
 
     env:
       CPACK_SUFFIX: ${{matrix.os != 'macos-14' && 'x86_64' || 'm1'}}.${{matrix.os}}
