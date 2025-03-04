@@ -92,7 +92,7 @@ t_stat status;
 
 if (!cptr)
     return SCPE_IERR;
-status = eth_mac_scan (&nar_mac, cptr);
+status = eth_mac_scan (nar_mac, cptr);
 if (status != SCPE_OK)
     return status;
 nar_reset (&nar_dev);
@@ -136,7 +136,7 @@ t_stat r;
 
 if (!nar_init) {                                        /* set initial MAC */
     nar_init = TRUE;
-    r = eth_mac_scan (&nar_mac, "08:00:2B:00:00:00/24");
+    r = eth_mac_scan (nar_mac, "08:00:2B:00:00:00/24");
     if (r != SCPE_OK)
         return r;
     }

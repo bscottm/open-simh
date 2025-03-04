@@ -386,6 +386,8 @@ static int _eth_get_system_id (char *buf, size_t buf_size);
 static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on);
 
 static const unsigned char framer_oui[3] = { 0xaa, 0x00, 0x03 };
+       const ETH_MAC eth_mac_any         = {0, 0, 0, 0, 0, 0};
+       const ETH_MAC eth_mac_bcast       = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 /*============================================================================*/
 /*                  OS-independent ethernet routines                          */
@@ -402,9 +404,7 @@ t_stat eth_mac_scan_ex (ETH_MAC* mac, const char* strmac, UNIT *uptr)
   FILE *f;
   char filebuf[64] = "";
   uint32 i;
-  static const ETH_MAC zeros = {0,0,0,0,0,0};
-  static const ETH_MAC ones  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  ETH_MAC newmac;
+  ETH_MAC newmac = {0, 0, 0, 0, 0, 0};
   struct {
       uint32 bits;
       char system_id[64];
@@ -470,8 +470,8 @@ t_stat eth_mac_scan_ex (ETH_MAC* mac, const char* strmac, UNIT *uptr)
       }
 
   /* final check - mac cannot be broadcast or multicast address */
-  if (!memcmp(newmac, zeros, sizeof(ETH_MAC)) ||  /* broadcast */
-      !memcmp(newmac, ones,  sizeof(ETH_MAC)) ||  /* broadcast */
+  if (!eth_mac_cmp(newmac, eth_mac_any) ||        /* broadcast */
+      !eth_mac_cmp(newmac, eth_mac_bcast) ||      /* broadcast */
       (newmac[0] & 0x01)                          /* multicast */
      )
     return sim_messagef (SCPE_ARG, "Can't use Broadcast or MultiCast address as interface MAC address\n");
@@ -496,15 +496,14 @@ t_stat eth_mac_scan_ex (ETH_MAC* mac, const char* strmac, UNIT *uptr)
     fclose (f);
     }
   /* copy into passed mac */
-  memcpy (*mac, newmac, sizeof(ETH_MAC));
+  eth_copy_mac (mac, newmac);
   return SCPE_OK;
 }
 
-void eth_mac_fmt(ETH_MAC* const mac, char* buff)
+void eth_mac_fmt(const ETH_MAC mac, char* buff)
 {
-  const uint8* m = (const uint8*) mac;
+  const uint8* m = (const uint8 *) mac;
   sprintf(buff, "%02X:%02X:%02X:%02X:%02X:%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
-  return;
 }
 
 static const uint32 crcTable[256] = {
@@ -625,7 +624,7 @@ void eth_packet_trace_ex(ETH_DEV* dev, const uint8 *msg, int len, const char* tx
       static const char hex[] = "0123456789ABCDEF";
 
       for (i=same=0; i<len; i += 16) {
-        if ((i > 0) && (0 == memcmp(&msg[i], &msg[i-16], 16))) {
+        if ((i > 0) && (0 == eth_mac_cmp(&msg[i], &msg[i-16]))) {
           ++same;
           continue;
         }
@@ -873,8 +872,11 @@ static char *(*p_pcap_lib_version) (void);
 
 static void _eth_add_to_open_list (ETH_DEV* dev)
 {
-eth_open_devices = (ETH_DEV**)realloc(eth_open_devices, (eth_open_device_count+1)*sizeof(*eth_open_devices));
-eth_open_devices[eth_open_device_count++] = dev;
+ETH_DEV **tmp = (ETH_DEV**)realloc(eth_open_devices, (eth_open_device_count+1)*sizeof(*eth_open_devices));
+if (tmp != NULL) {
+  eth_open_devices = tmp;
+  eth_open_devices[eth_open_device_count++] = dev;
+  }
 }
 
 static void _eth_remove_from_open_list (ETH_DEV* dev)
@@ -895,6 +897,11 @@ t_stat eth_show (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
   ETH_LIST  list[ETH_MAX_DEVICE];
   int number;
 
+  /* Squelch unused parameters. But do we really need them? */
+  SIM_UNUSED_ARG(uptr);
+  SIM_UNUSED_ARG(val);
+  SIM_UNUSED_ARG(desc);
+
   number = eth_devices(ETH_MAX_DEVICE, list, FALSE);
   fprintf(st, "ETH devices:\n");
   if (number == -1)
@@ -912,12 +919,12 @@ t_stat eth_show (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
     }
   if (eth_open_device_count) {
     int i;
-    char desc[ETH_DEV_DESC_MAX], *d;
+    char devdesc[ETH_DEV_DESC_MAX], *d;
 
     fprintf(st,"Open ETH Devices:\n");
     for (i=0; i<eth_open_device_count; i++) {
-      d = eth_getdesc_byname(eth_open_devices[i]->name, desc);
-      if (d)
+      d = eth_getdesc_byname(eth_open_devices[i]->name, devdesc);
+      if (d != NULL && *d != '\0')
         fprintf(st, " %-7s%s (%s)\n", eth_open_devices[i]->dptr->name, eth_open_devices[i]->dptr->units[0].filename, d);
       else
         fprintf(st, " %-7s%s\n", eth_open_devices[i]->dptr->name, eth_open_devices[i]->dptr->units[0].filename);
@@ -945,8 +952,7 @@ t_stat eth_attach_help(FILE *st, DEVICE *dptr, UNIT *uptr, int32 flag, const cha
   fprintf (st, "This simulator was not built with ethernet device support\n");
   return SCPE_OK;
   }
-t_stat eth_check_address_conflict (ETH_DEV* dev,
-                                   ETH_MAC* const mac)
+t_stat eth_check_address_conflict (ETH_DEV* dev, const ETH_MAC mac)
   {return SCPE_NOFNC;}
 t_stat eth_set_throttle (ETH_DEV* dev, uint32 time, uint32 burst, uint32 delay)
   {return SCPE_NOFNC;}
@@ -958,13 +964,13 @@ t_stat eth_write (ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
   {return SCPE_NOFNC;}
 int eth_read (ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
   {return SCPE_NOFNC;}
-t_stat eth_filter (ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter (ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                    ETH_BOOL all_multicast, ETH_BOOL promiscuous)
   {return SCPE_NOFNC;}
-t_stat eth_filter_hash (ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter_hash (ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                    ETH_BOOL all_multicast, ETH_BOOL promiscuous, ETH_MULTIHASH* const hash)
   {return SCPE_NOFNC;}
-t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                           ETH_BOOL all_multicast, ETH_BOOL promiscuous,
                           ETH_BOOL match_broadcast, ETH_MULTIHASH* const hash)
   {return SCPE_NOFNC;}
@@ -2850,15 +2856,15 @@ memset (&send, 0, sizeof(ETH_PACK));
 send.len = ETH_MIN_PACKET;                              /* minimum packet size */
 for (i=0; i<send.len; i++)
   send.msg[i] = _eth_rand_byte();
-memcpy(&send.msg[0], mac, sizeof(ETH_MAC));             /* target address */
-memcpy(&send.msg[6], mac, sizeof(ETH_MAC));             /* source address */
+eth_copy_mac(&send.msg[0], mac);                        /* target address */
+eth_copy_mac(&send.msg[6], mac);                        /* source address */
 send.msg[12] = 0x90;                                    /* loopback packet type */
 send.msg[13] = 0;
 send.msg[14] = 0;                                       /* Offset */
 send.msg[15] = 0;
 send.msg[16] = 2;                                       /* Forward */
 send.msg[17] = 0;
-memcpy(&send.msg[18], mac, sizeof(ETH_MAC));            /* Forward Destination */
+eth_copy_mac(&send.msg[18], mac);                       /* Forward Destination */
 send.msg[24] = 1;                                       /* Reply */
 send.msg[25] = 0;
 
@@ -2905,13 +2911,12 @@ if (reflections)
 return SCPE_OK;
 }
 
-t_stat eth_check_address_conflict (ETH_DEV* dev,
-                                   ETH_MAC* const mac)
+t_stat eth_check_address_conflict (ETH_DEV* dev, const ETH_MAC mac)
 {
 char mac_string[32];
 
 eth_mac_fmt(mac, mac_string);
-if (0 == memcmp (mac, dev->host_nic_phy_hw_addr, sizeof *mac))
+if (0 == eth_mac_cmp (mac, dev->host_nic_phy_hw_addr))
     return sim_messagef (SCPE_OK, "Sharing the host NIC MAC address %s may cause unexpected behavior\n", mac_string);
 return eth_check_address_conflict_ex (dev, mac, NULL, FALSE);
 }
@@ -3042,8 +3047,8 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
     /* Direct loopback responses to the host physical address since our physical address
        may not have been learned yet. */
     if (loopback_self_frame && dev->have_host_nic_phy_addr) {
-      memcpy(&packet->msg[6],  dev->host_nic_phy_hw_addr, sizeof(ETH_MAC));
-      memcpy(&packet->msg[18], dev->host_nic_phy_hw_addr, sizeof(ETH_MAC));
+      eth_copy_mac(&packet->msg[6],  dev->host_nic_phy_hw_addr);
+      eth_copy_mac(&packet->msg[18], dev->host_nic_phy_hw_addr);
       eth_packet_trace (dev, packet->msg, packet->len, "writing-fixed");
     }
 #ifdef USE_READER_THREAD
@@ -3123,7 +3128,6 @@ t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 #ifdef USE_READER_THREAD
 ETH_WRITE_REQUEST *request;
-int write_queue_size = 1;
 
 /* make sure device exists */
 if ((!dev) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
@@ -3140,6 +3144,7 @@ if (NULL == request)
   request = (ETH_WRITE_REQUEST *)malloc(sizeof(*request));
 
 /* Copy buffer contents */
+request->next = NULL;
 request->packet.len = packet->len;
 request->packet.used = packet->used;
 request->packet.status = packet->status;
@@ -3644,7 +3649,7 @@ if (function != 2) /*forward*/
    (we may receive others if we're in promiscuous mode, but shouldn't
    respond to them) */
 if ((0 == (data[0]&1)) &&           /* Multicast or Broadcast */
-    (0 != memcmp(dev->filter_address[0], data, sizeof(ETH_MAC))))
+    (0 != eth_mac_cmp(dev->filter_address[0], data)))
   return 0;
 
 /* Attempts to forward to multicast or broadcast addresses are explicitly
@@ -3660,8 +3665,8 @@ sim_debug(dev->dbit, dev->dptr, "_eth_process_loopback()\n");
 memset(&response, 0, sizeof(response));
 response.len = len;
 memcpy(response.msg, data, len);
-memcpy(&response.msg[0], &response.msg[offset+2], sizeof(ETH_MAC));
-memcpy(&response.msg[6], dev->filter_address[0], sizeof(ETH_MAC));
+eth_copy_mac(&response.msg[0], &response.msg[offset+2]);
+eth_copy_mac(&response.msg[6], dev->filter_address[0]);
 offset += 8 - 16; /* Account for the Ethernet Header and Offset value in this number  */
 response.msg[14] = offset & 0xFF;
 response.msg[15] = (offset >> 8) & 0xFF;
@@ -3692,8 +3697,8 @@ if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
      host's interface instead of the programmatically set physical address of this pseudo
      device, we restore parts of the modified packet back as needed */
   memcpy(datacopy, data, header->len);
-  memcpy(datacopy, dev->physical_addr, sizeof(ETH_MAC));
-  memcpy(datacopy+18, dev->physical_addr, sizeof(ETH_MAC));
+  eth_copy_mac(datacopy, dev->physical_addr);
+  eth_copy_mac(datacopy+18, dev->physical_addr);
   _eth_callback(info, header, datacopy);
   free(datacopy);
   return;
@@ -3959,8 +3964,8 @@ return status;
 t_stat eth_bpf_filter (ETH_DEV* dev, int addr_count, ETH_MAC* const filter_address,
                        ETH_BOOL all_multicast, ETH_BOOL promiscuous,
                        int reflections,
-                       ETH_MAC* physical_addr,
-                       ETH_MAC* host_nic_phy_hw_addr,
+                       ETH_MAC physical_addr,
+                       ETH_MAC host_nic_phy_hw_addr,
                        ETH_MULTIHASH* const hash,
                        char *buf)
 {
@@ -4032,14 +4037,12 @@ if (strlen(buf) > 0)
    simulated machine. */
 /* check for physical address in filters */
 if ((!promiscuous) && (addr_count) && (reflections > 0)) {
-  eth_mac_fmt(&physical_addr[0], mac);
+  eth_mac_fmt(physical_addr, mac);
   if (strcmp(mac, "00:00:00:00:00:00") != 0) {
     /* let packets through where dst and src are the same as our physical address */
     sprintf (&buf[strlen(buf)], " or ((ether dst %s) and (ether src %s))", mac, mac);
-    if (host_nic_phy_hw_addr) {
-      eth_mac_fmt(&host_nic_phy_hw_addr[0], mac);
-      sprintf(&buf[strlen(buf)], " or ((ether dst %s) and (ether proto 0x9000))", mac);
-      }
+    eth_mac_fmt(host_nic_phy_hw_addr, mac);
+    sprintf(&buf[strlen(buf)], " or ((ether dst %s) and (ether proto 0x9000))", mac);
     }
   }
 if ((0 == strlen(buf)) && (!promiscuous)) /* Empty filter means match nothing */
@@ -4048,7 +4051,7 @@ sim_debug(dev->dbit, dev->dptr, "BPF string is: |%s|\n", buf);
 return SCPE_OK;
 }
 
-t_stat eth_filter(ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                   ETH_BOOL all_multicast, ETH_BOOL promiscuous)
 {
 return eth_filter_hash_ex(dev, addr_count, addresses,
@@ -4056,7 +4059,7 @@ return eth_filter_hash_ex(dev, addr_count, addresses,
                           NULL);
 }
 
-t_stat eth_filter_hash(ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter_hash(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                        ETH_BOOL all_multicast, ETH_BOOL promiscuous,
                        ETH_MULTIHASH* const hash)
 {
@@ -4065,7 +4068,7 @@ return eth_filter_hash_ex(dev, addr_count, addresses,
                           hash);
 }
 
-t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, ETH_MAC* const addresses,
+t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
                           ETH_BOOL all_multicast, ETH_BOOL promiscuous,
                           ETH_BOOL match_broadcast, ETH_MULTIHASH* const hash)
 {
@@ -4094,7 +4097,7 @@ if (dev->reflections == -1)
 
 /* set new filter addresses */
 for (i = 0; i < addr_count; i++)
-  memcpy(dev->filter_address[i], addresses[i], sizeof(ETH_MAC));
+  eth_copy_mac(dev->filter_address[i], addresses[i]);
 dev->addr_count = addr_count;
 if (match_broadcast) {
   memset(&dev->filter_address[addr_count], 0xFF, sizeof(ETH_MAC));
@@ -4119,9 +4122,9 @@ if (hash) {
 if (dev->dptr->dctrl & dev->dbit) {
   sim_debug(dev->dbit, dev->dptr, "Filter Set\n");
   for (i = 0; i < addr_count; i++) {
-    char mac[20];
-    eth_mac_fmt(&dev->filter_address[i], mac);
-    sim_debug(dev->dbit, dev->dptr, "  Addr[%d]: %s\n", i, mac);
+    char macaddr[20];
+    eth_mac_fmt(dev->filter_address[i], macaddr);
+    sim_debug(dev->dbit, dev->dptr, "  Addr[%d]: %s\n", i, macaddr);
     }
   if (dev->all_multicast) {
     sim_debug(dev->dbit, dev->dptr, "All Multicast\n");
@@ -4142,7 +4145,7 @@ for (i = 0; i < addr_count; i++) {
     continue;  /* skip all multicast addresses */
   eth_mac_fmt(&dev->filter_address[i], mac);
   if (strcmp(mac, "00:00:00:00:00:00") != 0) {
-    memcpy(dev->physical_addr, &dev->filter_address[i], sizeof(ETH_MAC));
+    eth_copy_mac(dev->physical_addr, dev->filter_address[i]);
     break;
     }
   }
@@ -4153,8 +4156,8 @@ for (i = 0; i < addr_count; i++) {
 /* setup BPF filters and other fields to minimize packet delivery */
 eth_bpf_filter (dev, dev->addr_count, dev->filter_address,
                 dev->all_multicast, dev->promiscuous,
-                dev->reflections, &dev->physical_addr,
-                dev->have_host_nic_phy_addr ? &dev->host_nic_phy_hw_addr: NULL,
+                dev->reflections, dev->physical_addr,
+                dev->host_nic_phy_hw_addr,
                 (dev->hash_filter ? &dev->hash : NULL), buf);
 
 /* get netmask, which is a required argument for compiling.  The value,
@@ -4178,9 +4181,9 @@ if (dev->eth_api == ETH_API_PCAP) {
     sim_printf ("Eth: Reflections: %d\n", dev->reflections);
     sim_printf ("Eth: Filter Set:\n");
     for (i = 0; i < addr_count; i++) {
-      char mac[20];
-      eth_mac_fmt(&dev->filter_address[i], mac);
-      sim_printf ("Eth:   Addr[%d]: %s\n", i, mac);
+      char macaddr[20];
+      eth_mac_fmt(dev->filter_address[i], macaddr);
+      sim_printf ("Eth:   Addr[%d]: %s\n", i, macaddr);
       }
     if (dev->all_multicast)
       sim_printf ("Eth: All Multicast\n");
@@ -4276,12 +4279,11 @@ if (dev->error_reopen_count)
   fprintf(st, "  Error Reopen Count:      %d\n", (int)dev->error_reopen_count);
 if (1) {
   int i, count = 0;
-  ETH_MAC zeros = {0, 0, 0, 0, 0, 0};
   char  buffer[20];
 
   for (i = 0; i < ETH_FILTER_MAX; i++) {
-    if (memcmp(zeros, &dev->filter_address[i], sizeof(ETH_MAC))) {
-      eth_mac_fmt(&dev->filter_address[i], buffer);
+    if (eth_mac_cmp(eth_mac_any, dev->filter_address[i])) {
+      eth_mac_fmt(dev->filter_address[i], buffer);
       fprintf(st, "  MAC Filter[%2d]: %s\n", count++, buffer);
       }
     }
@@ -4386,7 +4388,7 @@ int bpf_compile_skip_count = 0;
       sim_printf ("Eth: Reflections: %d\n", reflections);       \
       sim_printf ("Eth: Filter Set:\n");                        \
       for (i = 0; i < addr_count; i++) {                        \
-        eth_mac_fmt(&filter_address[i], mac);                   \
+        eth_mac_fmt(filter_address[i], mac);                    \
         sim_printf ("Eth:   Addr[%d]: %s\n", i, mac);           \
         }                                                       \
       if (all_multicast)                                        \
@@ -4435,8 +4437,8 @@ for (eth_num=0; eth_num<eth_device_count; eth_num++) {
               ++bpf_count;
               r = eth_bpf_filter (&dev, addr_count, &filter_address[0],
                                   all_multicast, promiscuous, reflections,
-                                  &filter_address[0],
-                                  host_phy_addr_list[host_phy_addr_listindex],
+                                  filter_address[0],
+                                  *host_phy_addr_list[host_phy_addr_listindex],
                                   hash_list[hash_listindex],
                                   buf);
               if (r != SCPE_OK) {

@@ -2141,8 +2141,8 @@ imp_arp_update(struct imp_device *imp, in_addr_T ipaddr, ETH_MAC *ethaddr, int a
 
         if (tabptr->ipaddr != 0) {
             if (tabptr->ipaddr == ipaddr) {
-                if (0 != memcmp(&tabptr->ethaddr, ethaddr, sizeof(ETH_MAC))) {
-                    memcpy(&tabptr->ethaddr, ethaddr, sizeof(ETH_MAC));
+                if (0 != eth_mac_cmp(tabptr->ethaddr, ethaddr)) {
+                    eth_copy_mac(tabptr->ethaddr, ethaddr);
                     eth_mac_fmt(ethaddr, mac_buf);
                     sim_debug(DEBUG_ARP, &imp_dev,
                               "updating entry for IP %s to %s\n",
@@ -2178,7 +2178,7 @@ imp_arp_update(struct imp_device *imp, in_addr_T ipaddr, ETH_MAC *ethaddr, int a
     }
 
     /* Now save the entry */
-    memcpy(&tabptr->ethaddr, ethaddr, sizeof(ETH_MAC));
+    eth_copy_mac(tabptr->ethaddr, ethaddr);
     tabptr->ipaddr = ipaddr;
     tabptr->age = age;
     eth_mac_fmt(ethaddr, mac_buf);
@@ -2377,7 +2377,7 @@ t_stat imp_show_arp (FILE *st, UNIT *uptr, int32 val, CONST void *desc)
         if (tabptr->ipaddr == 0)
             continue;
 
-        eth_mac_fmt(&tabptr->ethaddr, buf);     /* format ethernet mac address */
+        eth_mac_fmt(tabptr->ethaddr, buf);      /* format ethernet mac address */
         if (tabptr->age == ARP_DONT_AGE)
             fprintf (st, "%-17s%-19s%s\n",
                           ipv4_inet_ntoa(*((struct in_addr *)&tabptr->ipaddr)),

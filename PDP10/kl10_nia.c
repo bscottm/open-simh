@@ -573,8 +573,8 @@ void nia_start()
                                                               nia_rh.wcr);
     nia_data.pia = (int)(nia_rh.buf & 7);
     nia_data.status |= NIA_MRN;
-    memcpy(&nia_data.macs[0], &nia_data.mac, sizeof (ETH_MAC));
-    memcpy(&nia_data.macs[1], &broadcast_ethaddr, sizeof(ETH_MAC));
+    eth_copy_mac(nia_data.macs[0], nia_data.mac);
+    eth_copy_mac(nia_data.macs[1], broadcast_ethaddr);
 }
 
 void nia_stop()
@@ -636,14 +636,12 @@ void nia_disable()
  */
 void nia_cpy_mac(uint64 word1, uint64 word2, ETH_MAC *mac)
 {
-    ETH_MAC  m;
-    m[0] = (unsigned char)((word1 >> 28) & 0xff);
-    m[1] = (unsigned char)((word1 >> 20) & 0xff);
-    m[2] = (unsigned char)((word1 >> 12) & 0xff);
-    m[3] = (unsigned char)((word1 >> 4) & 0xff);
-    m[4] = (unsigned char)((word2 >> 28) & 0xff);
-    m[5] = (unsigned char)((word2 >> 20) & 0xff);
-    memcpy(mac, &m, sizeof(ETH_MAC));
+    mac[0] = (unsigned char)((word1 >> 28) & 0xff);
+    mac[1] = (unsigned char)((word1 >> 20) & 0xff);
+    mac[2] = (unsigned char)((word1 >> 12) & 0xff);
+    mac[3] = (unsigned char)((word1 >> 4) & 0xff);
+    mac[4] = (unsigned char)((word2 >> 28) & 0xff);
+    mac[5] = (unsigned char)((word2 >> 20) & 0xff);
 }
 
 /*
@@ -903,9 +901,9 @@ void nia_load_mcast()
     t_addr   addr = nia_data.mcast_addr;
 
     /* Start with our own address. */
-    memcpy(&nia_data.macs[n], &nia_data.mac, sizeof (ETH_MAC));
+    eth_copy_mac(nia_data.macs[n], nia_data.mac);
     n++;
-    memcpy(&nia_data.macs[n], &broadcast_ethaddr, sizeof (ETH_MAC));
+    eth_copy_mac(nia_data.macs[n], broadcast_ethaddr);
     n++;
     for (i = 0; i < 17; i++) {
         uint64 word1, word2;
@@ -1142,10 +1140,10 @@ int nia_send_pkt(uint64 cmd)
         nia_error(EBSERR);
         return 0;
     }
-    nia_cpy_mac(word1, word2, &dest);
-    memcpy(hdr->dest, dest, sizeof(ETH_MAC));
+    nia_cpy_mac(word1, word2, dest);
+    eth_copy_mac(hdr->dest, dest);
     /* Copy our address over */
-    memcpy(hdr->src, nia_data.mac, sizeof(ETH_MAC));
+    eth_copy_mac(hdr->src, nia_data.mac);
     /* Set packet length */
     nia_data.snd_buff.len = len + sizeof(struct nia_eth_hdr);
     /* Preappend length if asking for pad */
@@ -1331,7 +1329,7 @@ t_stat nia_cmd_srv(UNIT * uptr)
          nia_data.prmsc = (int)(word1 & 1);
          nia_data.h4000 = (int)((word1 & 2) != 0);
          nia_data.amc = (int)((word1 & 4) != 0);
-         memcpy(&nia_data.macs[0], &nia_data.mac, sizeof (ETH_MAC));
+         eth_copy_mac(nia_data.macs[0], nia_data.mac);
          if (nia_recv_uptr->flags & UNIT_ATT)
              eth_filter (&nia_data.etherface, nia_data.macs_n + 2,
                          nia_data.macs, 0, 0);
@@ -1594,7 +1592,7 @@ t_stat nia_attach(UNIT* uptr, CONST char* cptr)
     if (tptr == NULL) return SCPE_MEM;
     strcpy(tptr, cptr);
 
-    memcpy(&nia_data.macs[0], &nia_data.mac, sizeof (ETH_MAC));
+    eth_copy_mac(nia_data.macs[0], nia_data.mac);
     memcpy(&nia_data.macs[1], &broadcast_ethaddr, 6);
     status = eth_open(&nia_data.etherface, cptr, &nia_dev, DEBUG_ETHER);
     if (status != SCPE_OK) {

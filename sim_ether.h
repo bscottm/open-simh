@@ -340,16 +340,16 @@ t_stat eth_write  (ETH_DEV* dev, ETH_PACK* packet,      /* write synchronous pac
 int eth_read      (ETH_DEV* dev, ETH_PACK* packet,      /* read single packet; */
                    ETH_PCALLBACK routine);              /*  callback when done*/
 t_stat eth_filter (ETH_DEV* dev, int addr_count,        /* set filter on incoming packets */
-                   ETH_MAC* const addresses,
+                   const ETH_MAC addresses[],
                    ETH_BOOL all_multicast,
                    ETH_BOOL promiscuous);
 t_stat eth_filter_hash (ETH_DEV* dev, int addr_count,   /* set filter on incoming packets with hash */
-                        ETH_MAC* const addresses,
+                        const ETH_MAC addresses[],
                         ETH_BOOL all_multicast,
                         ETH_BOOL promiscuous,
                         ETH_MULTIHASH* const hash);     /* AUTODIN II based 8 byte imperfect hash */
 t_stat eth_filter_hash_ex (ETH_DEV* dev, int addr_count,/* set filter on incoming packets with hash */
-                           ETH_MAC* const addresses,
+                           const ETH_MAC addresses[],
                            ETH_BOOL all_multicast,
                            ETH_BOOL promiscuous,
                            ETH_BOOL match_broadcast,
@@ -388,6 +388,46 @@ void ethq_insert_data(ETH_QUE* que, int32 type,         /* insert item into FIFO
 t_stat ethq_destroy(ETH_QUE* que);                      /* release FIFO queue */
 const char *eth_capabilities(void);
 t_stat sim_ether_test (DEVICE *dptr, const char *cptr); /* unit test routine */
+
+void sim_eth_callback(ETH_DEV *eth_dev, const uint32 len, const uint32 capture_len, const u_char* data);
+
+/* Well-known Ethernet MAC addresses:
+ *
+ * eth_mac_any: All zeroes/any address
+ * eth_mac_bcast: All ones broadcast.
+ */
+extern const ETH_MAC eth_mac_any;
+extern const ETH_MAC eth_mac_bcast;
+
+/* Type-enforcing MAC address copy function.
+ *
+ * This inline helps to prevent the following situation:
+ * 
+ *   void network_func(DEVICE *dev, ETH_MAC *mac)
+ *   {
+ *     ETH_MAC other_mac;
+ * 
+ *     ...
+ *     memcpy(other_mac, mac, sizeof(ETH_MAC));
+ *   }
+ * 
+ * The compiler will happily accept the memcpy() as valid because src and dst are
+ * converted to "void *". This is a subtle bug -- mac is a pointer to an ETH_MAC
+ * and memcpy will copy from somewhere other than the first byte of the source MAC
+ * address.
+ */
+static inline void eth_copy_mac(ETH_MAC dst, const ETH_MAC src)
+{
+  memcpy(dst, src, sizeof(ETH_MAC));
+}
+
+/* Type-enforcing MAC comparison function. Helps to avoid subtle memcmp() issues
+ * (see above).
+ */
+static inline int eth_mac_cmp(const ETH_MAC a, const ETH_MAC b)
+{
+  return memcmp(a, b, sizeof(ETH_MAC));
+}
 
 #if !defined(SIM_TEST_INIT)     /* Need stubs for test APIs */
 #define SIM_TEST_INIT
