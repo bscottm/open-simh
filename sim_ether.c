@@ -912,11 +912,11 @@ t_stat eth_show (FILE* st, UNIT* uptr, int32 val, CONST void* desc)
     }
   if (eth_open_device_count) {
     int i;
-    char desc[ETH_DEV_DESC_MAX], *d;
+    char devdesc[ETH_DEV_DESC_MAX], *d;
 
     fprintf(st,"Open ETH Devices:\n");
     for (i=0; i<eth_open_device_count; i++) {
-      d = eth_getdesc_byname(eth_open_devices[i]->name, desc);
+      d = eth_getdesc_byname(eth_open_devices[i]->name, devdesc);
       if (d)
         fprintf(st, " %-7s%s (%s)\n", eth_open_devices[i]->dptr->name, eth_open_devices[i]->dptr->units[0].filename, d);
       else
@@ -1965,6 +1965,7 @@ switch (dev->eth_api) {
     break;
   }
 
+sim_atomic_put(&dev->reader_state, ETH_THREAD_RUNNING);
 sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
@@ -1972,7 +1973,13 @@ sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
    when this thread needs to run */
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
-while (dev->handle) {
+/* Signal that we've started... */
+pthread_mutex_lock(&dev->control_lock);
+pthread_cond_signal(&dev->control_cond);
+pthread_mutex_unlock(&dev->control_lock);
+
+/* Off to the races... */
+while (sim_atomic_get(&dev->reader_state) == ETH_THREAD_RUNNING) {
 #if defined (_WIN32)
   if (dev->eth_api == ETH_API_PCAP) {
     if (WAIT_OBJECT_0 == WaitForSingleObject (hWait, 250))
@@ -2118,6 +2125,7 @@ while (dev->handle) {
     }
   }
 
+sim_atomic_put(&dev->reader_state, ETH_THREAD_EXITED);
 sim_debug(dev->dbit, dev->dptr, "Reader Thread Exiting\n");
 return NULL;
 }
@@ -2126,52 +2134,56 @@ static void *
 _eth_writer(void *arg)
 {
 ETH_DEV* volatile dev = (ETH_DEV*)arg;
-ETH_WRITE_REQUEST *request = NULL;
+int have_lock;
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
    thread which in general won't be readily yielding the processor when
    this thread needs to run */
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
+sim_atomic_put(&dev->writer_state, ETH_THREAD_RUNNING);
 sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
 
+/* Signal that we've started... */
+pthread_mutex_lock(&dev->control_lock);
+pthread_cond_signal(&dev->control_cond);
+pthread_mutex_unlock(&dev->control_lock);
+
 pthread_mutex_lock (&dev->writer_lock);
-while (dev->handle) {
-  pthread_cond_wait (&dev->writer_cond, &dev->writer_lock);
-  while (NULL != (request = dev->write_requests)) {
-    if (dev->handle == NULL)      /* Shutting down? */
-      break;
-    /* Pull buffer off request list */
-    dev->write_requests = request->next;
-    pthread_mutex_unlock (&dev->writer_lock);
+have_lock = TRUE;
+while (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
+  ETH_WRITE_REQUEST *request;
 
-    if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
-      uint32 packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
-      dev->throttle_events <<= 1;
-      dev->throttle_events += (packet_delta_time < dev->throttle_time) ? 1 : 0;
-      if ((dev->throttle_events & dev->throttle_mask) == dev->throttle_mask) {
-        sim_os_ms_sleep (dev->throttle_delay);
-        ++dev->throttle_count;
+  /* Pull buffer off request list */
+  if (NULL != (request = dev->write_requests)) {
+      dev->write_requests = request->next;
+      pthread_mutex_unlock (&dev->writer_lock);
+
+      if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
+        uint32 packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
+        dev->throttle_events <<= 1;
+        dev->throttle_events += (packet_delta_time < dev->throttle_time) ? 1 : 0;
+        if ((dev->throttle_events & dev->throttle_mask) == dev->throttle_mask) {
+          sim_os_ms_sleep (dev->throttle_delay);
+          ++dev->throttle_count;
+          }
+        dev->throttle_packet_time = sim_os_msec();
         }
-      dev->throttle_packet_time = sim_os_msec();
-      }
-    dev->write_status = _eth_write(dev, &request->packet, NULL);
+      dev->write_status = _eth_write(dev, &request->packet, NULL);
 
-    pthread_mutex_lock (&dev->writer_lock);
-    /* Put buffer on free buffer list */
-    request->next = dev->write_buffers;
-    dev->write_buffers = request;
-    request = NULL;
+      /* Put buffer on free buffer list */
+      pthread_mutex_lock (&dev->writer_lock);
+      request->next = dev->write_buffers;
+      dev->write_buffers = request;
+    }
+  else {
+    pthread_cond_wait (&dev->writer_cond, &dev->writer_lock);
     }
   }
-/* If we exited these loops with a request allocated, */
-/* avoid buffer leaking by putting it on free buffer list */
-if (request) {
-  request->next = dev->write_buffers;
-  dev->write_buffers = request;
-  }
+
 pthread_mutex_unlock (&dev->writer_lock);
 
+sim_atomic_put(&dev->writer_state, ETH_THREAD_EXITED);
 sim_debug(dev->dbit, dev->dptr, "Writer Thread Exiting\n");
 return NULL;
 }
@@ -2610,9 +2622,26 @@ if (1) {
     }
   }
 #endif /* defined(__hpux) */
+
+  pthread_mutex_init(&dev->control_lock, NULL);
+  pthread_cond_init(&dev->control_cond, NULL);
+
+  pthread_mutex_lock(&dev->control_lock);
   pthread_create (&dev->reader_thread, &attr, _eth_reader, (void *)dev);
+
+  /* Ensure the reader thread has started. */
+  pthread_cond_wait(&dev->control_cond, &dev->control_lock);
+  /* Note: Do not need to unlock _lock, since we received it
+   * in a locked state from the prior condvar wait AND we'll reuse
+   * it in the next condvar wait. */
+
+  /* Ensure the write thread has started. */
   pthread_create (&dev->writer_thread, &attr, _eth_writer, (void *)dev);
+  pthread_cond_wait(&dev->control_cond, &dev->control_lock);
+  pthread_mutex_unlock(&dev->control_lock);
   pthread_attr_destroy(&attr);
+  pthread_mutex_destroy(&dev->control_lock);
+  pthread_cond_destroy(&dev->control_cond);
   }
 #endif /* defined (USE_READER_THREAD */
 _eth_add_to_open_list (dev);
@@ -2670,10 +2699,26 @@ dev->fd_handle = 0;
 dev->have_host_nic_phy_addr = 0;
 
 #if defined (USE_READER_THREAD)
-pthread_join (dev->reader_thread, NULL);
-pthread_mutex_destroy (&dev->lock);
-pthread_cond_signal (&dev->writer_cond);
+/* Signal the threads to shut down: */
+if (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
+  sim_atomic_put(&dev->writer_state, ETH_THREAD_SHUTDOWN);
+
+  pthread_mutex_lock(&dev->writer_lock);
+  pthread_cond_broadcast (&dev->writer_cond);
+  pthread_mutex_unlock(&dev->writer_lock);
+}
+
+/* Reap the writer. */
 pthread_join (dev->writer_thread, NULL);
+
+if (sim_atomic_get(&dev->reader_state) == ETH_THREAD_RUNNING) {
+  sim_atomic_put(&dev->reader_state, ETH_THREAD_SHUTDOWN);
+  }
+
+/* Reap the reader. */
+pthread_join (dev->reader_thread, NULL);
+
+pthread_mutex_destroy (&dev->lock);
 pthread_mutex_destroy (&dev->self_lock);
 pthread_mutex_destroy (&dev->writer_lock);
 pthread_cond_destroy (&dev->writer_cond);
@@ -3123,7 +3168,6 @@ t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 #ifdef USE_READER_THREAD
 ETH_WRITE_REQUEST *request;
-int write_queue_size = 1;
 
 /* make sure device exists */
 if ((!dev) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
@@ -3133,11 +3177,14 @@ if (packet->len > sizeof (packet->msg)) /* packet oversized? */
 
 /* Get a buffer */
 pthread_mutex_lock (&dev->writer_lock);
-if (NULL != (request = dev->write_buffers))
-  dev->write_buffers = request->next;
-pthread_mutex_unlock (&dev->writer_lock);
-if (NULL == request)
-  request = (ETH_WRITE_REQUEST *)malloc(sizeof(*request));
+
+if (NULL == (request = dev->write_buffers)) {
+    request = (ETH_WRITE_REQUEST *) calloc(1, sizeof(*request));
+    if (request == NULL)
+      return SCPE_MEM;                  /* malloc() failed. */
+  }
+
+dev->write_buffers = request->next;
 
 /* Copy buffer contents */
 request->packet.len = packet->len;
@@ -3145,29 +3192,25 @@ request->packet.used = packet->used;
 request->packet.status = packet->status;
 request->packet.crc_len = packet->crc_len;
 memcpy(request->packet.msg, packet->msg, packet->len);
-
-/* Insert buffer at the end of the write list (to make sure that */
-/* packets make it to the wire in the order they were presented here) */
-pthread_mutex_lock (&dev->writer_lock);
 request->next = NULL;
-if (dev->write_requests) {
-  ETH_WRITE_REQUEST *last_request = dev->write_requests;
 
+/* Insert buffer at the end of the write list (to make sure that
+ * packets make it to the wire in the order they were presented here). */
+ETH_WRITE_REQUEST **insertion = &dev->write_requests;
+int write_queue_size = 1;
+
+while (*insertion != NULL) {
+  insertion = &(*insertion)->next;
   ++write_queue_size;
-  while (last_request->next) {
-    last_request = last_request->next;
-    ++write_queue_size;
-    }
-  last_request->next = request;
-  }
-else
-    dev->write_requests = request;
+}
+
+*insertion = request;
 if (write_queue_size > dev->write_queue_peak)
   dev->write_queue_peak = write_queue_size;
-pthread_mutex_unlock (&dev->writer_lock);
 
-/* Awaken writer thread to perform actual write */
+/* Awaken writer thread to perform actual write. */
 pthread_cond_signal (&dev->writer_cond);
+pthread_mutex_unlock(&dev->writer_lock);
 
 /* Return with a status from some prior write */
 if (routine)
@@ -3687,6 +3730,11 @@ int bpf_used;
 
 if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
   u_char *datacopy = (u_char *)malloc(header->len);
+
+  if (datacopy == NULL) {
+    sim_printf("%s: Discarded packet (datacopy), malloc() failed.\n", __FUNCTION__);
+    return;
+  }
 
   /* Since we changed the outgoing loopback packet to have the physical MAC address of the
      host's interface instead of the programmatically set physical address of this pseudo

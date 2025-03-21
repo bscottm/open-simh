@@ -235,6 +235,7 @@
 #include "sim_video.h"
 #include "sim_sock.h"
 #include "sim_frontpanel.h"
+#include "sim_atomic.h"
 #include <signal.h>
 #include <ctype.h>
 #include <time.h>
@@ -6752,6 +6753,13 @@ if (flag) {
     fprintf (st, "\n        Memory Access: %s Endian", sim_end ? "Little" : "Big");
     fprintf (st, "\n        Memory Pointer Size: %d bits", (int)sizeof(dptr)*8);
     fprintf (st, "\n        %s", sim_toffset_64 ? "Large File (>2GB) support" : "No Large File support");
+#if HAVE_STD_ATOMIC
+    fprintf (st, "\n        C11 (and higher) standard atomic variables");
+#elif HAVE_ATOMIC_PRIMS
+    fprintf (st, "\n        Compiler intrinsic atomic variables");
+#else
+    fprintf (st, "\n        Emulated atomic variables with mutex guard");
+#endif
     fprintf (st, "\n        SDL Video support: %s", vid_version());
 #if defined (HAVE_PCRE_H)
     fprintf (st, "\n        PCRE RegEx (Version %s) support for EXPECT commands", pcre_version());

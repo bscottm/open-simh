@@ -109,7 +109,8 @@ extern "C" {
 
 /* set related values to have correct relationships */
 #if defined (USE_READER_THREAD)
-#include <pthread.h>
+#include "sim_atomic.h"
+
 #if defined (USE_SETNONBLOCK)
 #undef USE_SETNONBLOCK
 #endif /* USE_SETNONBLOCK */
@@ -118,6 +119,14 @@ extern "C" {
 #if (!defined (xBSD) && !defined(_WIN32) && !defined(VMS) && !defined(__CYGWIN__)) || defined (HAVE_TAP_NETWORK) || defined (HAVE_VDE_NETWORK)
 #define MUST_DO_SELECT 1
 #endif
+
+/* Reader, writer thread states */
+typedef enum {
+  ETH_THREAD_IDLE,
+  ETH_THREAD_RUNNING,
+  ETH_THREAD_SHUTDOWN,
+  ETH_THREAD_EXITED
+} sim_eththread_state_t;
 #endif /* USE_READER_THREAD */
 
 /* give priority to USE_NETWORK over USE_SHARED */
@@ -320,10 +329,19 @@ struct eth_device {
   pthread_mutex_t     writer_lock;
   pthread_mutex_t     self_lock;
   pthread_cond_t      writer_cond;
+
+  /* Startup/shutdown transient coordination: */
+  pthread_mutex_t     control_lock;
+  pthread_cond_t      control_cond;
+
   ETH_WRITE_REQUEST *write_requests;
   int write_queue_peak;
   ETH_WRITE_REQUEST *write_buffers;
   t_stat write_status;
+
+  /* Thread states */
+  sim_atomic_value_t reader_state;
+  sim_atomic_value_t writer_state;
 #endif
 };
 
