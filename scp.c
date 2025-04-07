@@ -13665,9 +13665,9 @@ while (len > 0) {
       buf += len_written;
     } else {
       if (errno == EAGAIN)    /* Non blocking file descriptor buffer full? */
-          sim_os_ms_sleep(10);/* wait a bit to retry */
+        sim_os_ms_sleep(10);  /* wait a bit to retry */
       else
-          break;
+        break;
     }
   }
 
@@ -13778,7 +13778,7 @@ while (NULL != (eol = strchr (debug_line_buf, '\n')) || flush) {
                is the same as the current debug line's comparison length. */
             if (debug_line_buf_last_len == compare_len &&
                 0 == memcmp (&debug_line_buf[endprefix - debug_line_buf],
-                              &debug_line_buf_last[debug_line_buf_last_endprefix_offset],
+                             &debug_line_buf_last[debug_line_buf_last_endprefix_offset],
                              compare_len)) {
                 ++debug_line_count;
                 memcpy (debug_line_last_prefix, debug_line_buf, (endprefix - debug_line_buf) + 3);
@@ -13801,9 +13801,11 @@ while (NULL != (eol = strchr (debug_line_buf, '\n')) || flush) {
                 }
             }
         }
-    debug_line_offset -= linesize;
-    if ((debug_line_offset > 0) && (!flush))
-        memmove (debug_line_buf, eol + 1, debug_line_offset);
+    if (debug_line_offset >= linesize) {
+        if (!flush)
+            memmove (debug_line_buf, eol + 1, debug_line_offset - linesize);
+        debug_line_offset -= linesize;
+        }
     debug_line_buf[debug_line_offset] = '\0';
     }
 }
