@@ -305,7 +305,9 @@ struct nia_device {
     ETH_PCALLBACK     wcallback;               /* write callback routine */
     ETH_MAC           mac;                     /* Hardware MAC addresses */
     ETH_DEV           etherface;
+#if 0
     ETH_QUE           ReadQ;
+#endif
     ETH_PACK          rec_buff;                /* Buffer for recieved packet */
     ETH_PACK          snd_buff;                /* Buffer for sending packet */
     t_addr            cmd_entry;               /* Pointer to current command entry */
@@ -1620,6 +1622,7 @@ t_stat nia_attach(UNIT* uptr, CONST char* cptr)
     uptr->flags |= UNIT_ATT;
     eth_setcrc(&nia_data.etherface, 1);     /* Enable CRC */
 
+#if 0
     /* init read queue (first time only) */
     status = ethq_init(&nia_data.ReadQ, 8);
     if (status != SCPE_OK) {
@@ -1629,6 +1632,7 @@ t_stat nia_attach(UNIT* uptr, CONST char* cptr)
         return sim_messagef (status, "%s: Can't initialize receive queue\n",
                              nia_dev.name);
     }
+#endif
 
 
     /* Allow Asynchronous inbound packets */

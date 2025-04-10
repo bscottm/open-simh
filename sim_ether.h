@@ -109,16 +109,17 @@ extern "C" {
 
 /* set related values to have correct relationships */
 #if defined (USE_READER_THREAD)
-#include "sim_atomic.h"
-#include <pthread.h>
-#if defined (USE_SETNONBLOCK)
-#undef USE_SETNONBLOCK
-#endif /* USE_SETNONBLOCK */
-#undef PCAP_READ_TIMEOUT
-#define PCAP_READ_TIMEOUT 15
-#if (!defined (xBSD) && !defined(_WIN32) && !defined(VMS) && !defined(__CYGWIN__)) || defined (HAVE_TAP_NETWORK) || defined (HAVE_VDE_NETWORK)
-#define MUST_DO_SELECT 1
-#endif
+#  include "sim_atomic.h"
+
+#  if defined (USE_SETNONBLOCK)
+#    undef USE_SETNONBLOCK
+#  endif /* USE_SETNONBLOCK */
+
+#  undef PCAP_READ_TIMEOUT
+#  define PCAP_READ_TIMEOUT 15
+#  if (!defined (xBSD) && !defined(_WIN32) && !defined(VMS) && !defined(__CYGWIN__)) || defined (HAVE_TAP_NETWORK) || defined (HAVE_VDE_NETWORK)
+#    define MUST_DO_SELECT 1
+#  endif
 
 /* Reader, writer thread states */
 typedef enum {
@@ -227,16 +228,6 @@ struct eth_item {
   struct eth_packet   packet;
 };
 
-struct eth_queue {
-  int                 max;
-  int                 count;
-  int                 head;
-  int                 tail;
-  int                 loss;
-  int                 high;
-  struct eth_item*    item;
-};
-
 typedef unsigned char ETH_MAC[6];
 
 struct eth_list {
@@ -250,7 +241,6 @@ typedef unsigned char ETH_MULTIHASH[8];
 typedef struct eth_packet  ETH_PACK;
 typedef void (*ETH_PCALLBACK)(int status);
 typedef struct eth_list ETH_LIST;
-typedef struct eth_queue ETH_QUE;
 typedef struct eth_item ETH_ITEM;
 struct eth_write_request {
   struct eth_write_request *next;
@@ -323,7 +313,6 @@ struct eth_device {
   int                 asynch_io;                        /* Asynchronous Interrupt scheduling enabled */
   int                 asynch_io_latency;                /* instructions to delay pending interrupt */
 
-  ETH_QUE             read_queue;
   pthread_mutex_t     lock;
   pthread_t           reader_thread;                    /* Reader Thread Id */
   pthread_t           writer_thread;                    /* Writer Thread Id */
@@ -335,12 +324,18 @@ struct eth_device {
   pthread_mutex_t     startup_lock;
   pthread_cond_t      startup_cond;
 
+  /* ETH_ITEM tail queue for incoming packets */
+  sim_tailq_t         read_queue;
+  /* ETH_ITEM tail queue for free incoming packet buffers. */
+  sim_tailq_t         read_buffers;
+  /* Max numer of packets in the read queue. */
+  sim_atomic_type_t   read_queue_peak;
   /* ETH_WRITE_REQUEST tail queue of pending outbound packets. */
-  sim_tailq_t   write_requests;
+  sim_tailq_t         write_requests;
   /* ETH_WRITE_REQUEST tail queue of free buffers. */
-  sim_tailq_t   write_buffers;
+  sim_tailq_t         write_buffers;
   /* Maximum size of the write queue. */
-  int                 write_queue_peak;
+  sim_atomic_type_t   write_queue_peak;
   /* t_stat embedded inside an atomic value. write_status is shared across
    * multiple threads, necessitating synchronization. */
   sim_atomic_value_t  write_status;
@@ -410,15 +405,30 @@ t_stat eth_mac_scan (ETH_MAC mac, const char* strmac);  /* scan string for mac, 
 t_stat eth_mac_scan_ex (ETH_MAC mac,                    /* scan string for mac, put in mac */
                         const char* strmac, UNIT *uptr);/* for specified unit */
 
-t_stat ethq_init (ETH_QUE* que, int max);               /* initialize FIFO queue */
-void ethq_clear  (ETH_QUE* que);                        /* clear FIFO queue */
-void ethq_remove (ETH_QUE* que);                        /* remove item from FIFO queue */
-void ethq_insert (ETH_QUE* que, int32 type,             /* insert item into FIFO queue */
+/* Ethernet device ring FIFO functions: Simulator devices, such as the PDP-11 XQ
+ * Ethernet device, can have fixed size send and receive ring buffers that
+ * operate as packet FIFOs. (This typedef was formerly known as ETH_QUE.)*/
+
+typedef struct eth_fifo_ring_s {
+  int                 max;
+  int                 count;
+  int                 head;
+  int                 tail;
+  int                 loss;
+  int                 high;
+  struct eth_item*    item;
+} ETH_RING_FIFO;
+
+t_stat ethq_init (ETH_RING_FIFO *que, int max);         /* initialize FIFO queue */
+void ethq_clear  (ETH_RING_FIFO *que);                  /* clear FIFO queue */
+t_stat ethq_destroy(ETH_RING_FIFO *que);                /* release FIFO queue */
+
+void ethq_remove (ETH_RING_FIFO* que);                  /* remove item from FIFO queue */
+void ethq_insert (ETH_RING_FIFO* que, int32 type,       /* insert item into FIFO queue */
                   ETH_PACK* packet, int32 status);
-void ethq_insert_data(ETH_QUE* que, int32 type,         /* insert item into FIFO queue */
+void ethq_insert_data(ETH_RING_FIFO* que, int32 type,   /* insert item into FIFO queue */
                   const uint8 *data, int used, size_t len,
                   size_t crc_len, const uint8 *crc_data, int32 status);
-t_stat ethq_destroy(ETH_QUE* que);                      /* release FIFO queue */
 const char *eth_capabilities(void);
 t_stat sim_ether_test (DEVICE *dptr, const char *cptr); /* unit test routine */
 

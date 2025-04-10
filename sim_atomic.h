@@ -16,10 +16,6 @@
  *   sim_atomic_type_t: The underlying type inside the sim_atomic_value_t wrapper.
  *     This is a long for GCC and Clang, LONG for Windows.
  *
- * Clang's atomic intrinsics are slightly different as compared to GCC: For add,
- * subtract operations, Clang's atomics fetch and return the old value. So,
- * Clang takes an extra atomic load to fetch the new value.
- *
  * sim_atomic_init(sim_atomic_value_t *): Initialize an atomic wrapper. The
  *   value is set to 0 and the mutex is initialized (when necessary.)
  *
@@ -67,29 +63,31 @@
 
 #include <pthread.h>
 
-#if !defined(__STDC_NO_ATOMICS__) && __STDC_VERSION__ >= 201112L
+#if !defined(SIM_ATOMIC_MUTEX_ONLY)
+#  if !defined(__STDC_NO_ATOMICS__) && __STDC_VERSION__ >= 201112L
    /* C11 or newer compiler -- use the compiler's support for atomic types. */
-#  include <stdatomic.h>
-#  define HAVE_STD_ATOMIC 1
-#  define SIM_ATOMIC_TYPE(X) _Atomic(X)
-#else
+#    include <stdatomic.h>
+#    define HAVE_STD_ATOMIC 1
+#    define SIM_ATOMIC_TYPE(X) _Atomic(X)
+#  else
 /* TODO:  defined(__DECC_VER) && defined(_IA64) -- DEC C on Itanium looks like it
  * might be the same as Windows' interlocked API. Contribtion/correction needed. */
 
 /* NON-FEATURE: Older GCC __sync_* primitives. These have been deprecated for a long
  * time. Explicitly not supported. */
 
-#  define HAVE_STD_ATOMIC 0
-#  define SIM_ATOMIC_TYPE(X) X volatile
+#    define HAVE_STD_ATOMIC 0
+#    define SIM_ATOMIC_TYPE(X) X volatile
 
-#  if (defined(_WIN32) || defined(_WIN64)) || \
-       (defined(__ATOMIC_ACQ_REL) && defined(__ATOMIC_SEQ_CST) && defined(__ATOMIC_ACQUIRE) && \
-        defined(__ATOMIC_RELEASE))
-     /* Atomic operations available! */
-#    include <stdbool.h>
-#    define HAVE_ATOMIC_PRIMS 1
-#  else
-#    define HAVE_ATOMIC_PRIMS 0
+#    if (defined(_WIN32) || defined(_WIN64)) || \
+         (defined(__ATOMIC_ACQ_REL) && defined(__ATOMIC_SEQ_CST) && defined(__ATOMIC_ACQUIRE) && \
+          defined(__ATOMIC_RELEASE))
+       /* Atomic operations available! */
+#      include <stdbool.h>
+#      define HAVE_ATOMIC_PRIMS 1
+#    else
+#      define HAVE_ATOMIC_PRIMS 0
+#    endif
 #  endif
 #endif
 
@@ -97,16 +95,19 @@
 #  define WINDOWS_LEAN_AND_MEAN
 #  include <windows.h>
    typedef LONG sim_atomic_type_t;
+#  define PRIsim_atomic "ld"
 #else
    typedef long sim_atomic_type_t;
+#  define PRIsim_atomic "ld"
 #endif
 
 /* NEED_VALUE_MUTEX: Shorthand for where we need to manipulate or maintain the
  * the "atomic" value's mutex. */
-#if HAVE_ATOMIC_PRIMS || HAVE_STD_ATOMIC
+#if !defined(SIM_ATOMIC_MUTEX_ONLY) && (HAVE_ATOMIC_PRIMS || HAVE_STD_ATOMIC)
 #  define NEED_VALUE_MUTEX 0
 #else
 #  define NEED_VALUE_MUTEX 1
+#  define SIM_ATOMIC_TYPE(X) X
 #endif
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -131,7 +132,7 @@ typedef struct {
 static SIM_INLINE void sim_atomic_init(sim_atomic_value_t *p)
 {
 #if NEED_VALUE_MUTEX
-    paired = 0;
+    p->paired = 0;
     p->value_lock = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
     pthread_mutex_init(p->value_lock, NULL);
 #endif
@@ -141,7 +142,7 @@ static SIM_INLINE void sim_atomic_init(sim_atomic_value_t *p)
 static SIM_INLINE void sim_atomic_paired_init(sim_atomic_value_t *p, pthread_mutex_t *mutex)
 {
 #if NEED_VALUE_MUTEX
-    paired = 1;
+    p->paired = 1;
     p->value_lock = mutex;
 #else
     /* Prevent unused arg warnings. */
@@ -189,9 +190,9 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
         retval = -1;
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
     retval = p->value;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 
     return retval;
@@ -215,9 +216,9 @@ static SIM_INLINE void sim_atomic_put(sim_atomic_value_t *p, sim_atomic_type_t n
 #    error "sim_atomic_put: No intrinsic? Need __ATOMIC_RELEASE"
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
     p->value = newval;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 }
 
@@ -246,10 +247,9 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_at
 #    error "sim_atomic_add: No intrinsic?"
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
-    p->value += newval;
-    retval = p->value;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
+    retval = (p->value += x);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 
     return retval;
@@ -283,10 +283,9 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_at
 #    error "sim_atomic_sub: No intrinsic?"
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
-    p->value -= newval;
-    retval = p->value;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
+    retval = (p->value -= x);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 
     return retval;
@@ -307,9 +306,9 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_inc(sim_atomic_value_t *p)
 #    error "sim_atomic_inc: No intrinsic?"
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
     retval = ++p->value;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 
     return retval;
@@ -330,9 +329,9 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
 #    error "sim_atomic_dec: No intrinsic?"
 #  endif
 #else
-    pthread_mutex_lock(&p->value_lock);
+    pthread_mutex_lock(p->value_lock);
     retval = --p->value;
-    pthread_mutex_unlock(&p->value_lock);
+    pthread_mutex_unlock(p->value_lock);
 #endif
 
     return retval;
@@ -440,11 +439,11 @@ static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_head(const sim_tailq_t *p)
 #    error "sim_atomic_get: No intrinsic?"
 #  endif
 #else
-    sim_atomic_elem_t *retval;
+    sim_tailq_elem_t *retval;
 
-    pthread_mutex_lock(&p->lock);
+    pthread_mutex_lock(p->lock);
     retval = p->head;
-    pthread_mutex_unlock(&p->lock);
+    pthread_mutex_unlock(p->lock);
 
     return retval;
 #endif
@@ -454,7 +453,7 @@ static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_head(const sim_tailq_t *p)
 static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_next(const sim_tailq_elem_t *p)
 {
 #if HAVE_STD_ATOMIC
-    return atomic_load(&p->next);
+    return p->next;
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
     sim_tailq_elem_t *retval;
@@ -470,14 +469,8 @@ static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_next(const sim_tailq_elem_t *
 #  else
 #    error "sim_atomic_get: No intrinsic?"
 #  endif
-#else
-    sim_atomic_elem_t *retval;
-
-    pthread_mutex_lock(&p->lock);
-    retval = p->next;
-    pthread_mutex_unlock(&p->lock);
-
-    return retval;
+#else /* NEED_VALUE_LOCK */
+    return p->next;
 #endif
 }
 

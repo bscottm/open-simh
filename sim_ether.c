@@ -371,6 +371,8 @@
 
 #include <ctype.h>
 #include "sim_ether.h"
+#include "scp.h"
+#include "sim_atomic.h"
 #include "sim_sock.h"
 #include "sim_timer.h"
 #if defined(_WIN32)
@@ -683,89 +685,89 @@ void eth_zero(ETH_DEV* dev)
   dev->reflections = -1;                          /* not established yet */
 }
 
-t_stat ethq_init(ETH_QUE* que, int max)
+t_stat ethq_init(ETH_RING_FIFO *fifo, int max)
 {
   /* create dynamic queue if it does not exist */
-  if (!que->item) {
-    que->item = (struct eth_item *) calloc(max, sizeof(struct eth_item));
-    if (NULL == que->item) {
+  if (fifo->item == NULL) {
+    fifo->item = (struct eth_item *) calloc(max, sizeof(struct eth_item));
+    if (NULL == fifo->item) {
       /* failed to allocate memory */
       sim_printf("EthQ: failed to allocate dynamic queue[%d]\n", max);
       return SCPE_MEM;
     };
-    que->max = max;
+    fifo->max = max;
   };
-  ethq_clear(que);
+  ethq_clear(fifo);
   return SCPE_OK;
 }
 
-t_stat ethq_destroy(ETH_QUE* que)
+t_stat ethq_destroy(ETH_RING_FIFO *fifo)
 {
   /* release dynamic queue if it exists */
-  ethq_clear(que);
-  que->max = 0;
-  if (que->item) {
-    free(que->item);
-    que->item = NULL;
+  ethq_clear(fifo);
+  fifo->max = 0;
+  if (fifo->item != NULL) {
+    free(fifo->item);
+    fifo->item = NULL;
   };
   return SCPE_OK;
 }
 
-void ethq_clear(ETH_QUE* que)
+void ethq_clear(ETH_RING_FIFO *fifo)
 {
   int i;
 
   /* free up any extended packets */
-  for (i=0; i<que->max; ++i)
-    if (que->item[i].packet.oversize) {
-      free (que->item[i].packet.oversize);
-      que->item[i].packet.oversize = NULL;
+  for (i=0; i<fifo->max; ++i)
+    if (fifo->item[i].packet.oversize) {
+      free (fifo->item[i].packet.oversize);
+      fifo->item[i].packet.oversize = NULL;
       }
   /* clear packet array */
-  memset(que->item, 0, sizeof(struct eth_item) * que->max);
+  memset(fifo->item, 0, sizeof(struct eth_item) * fifo->max);
   /* clear rest of structure */
-  que->count = que->head = que->tail = 0;
+  fifo->count = fifo->head = fifo->tail = 0;
 }
 
-void ethq_remove(ETH_QUE* que)
+void ethq_remove(ETH_RING_FIFO *fifo)
 {
-  struct eth_item* item = &que->item[que->head];
+  struct eth_item* item = &fifo->item[fifo->head];
 
-  if (que->count) {
+  if (fifo->count) {
     if (item->packet.oversize)
       free (item->packet.oversize);
     memset(item, 0, sizeof(struct eth_item));
-    if (++que->head == que->max)
-      que->head = 0;
-    que->count--;
+    if (++fifo->head == fifo->max)
+      fifo->head = 0;
+    fifo->count--;
   }
 }
 
-void ethq_insert_data(ETH_QUE* que, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
+void ethq_insert_data(ETH_RING_FIFO* fifo, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
 {
   struct eth_item* item;
 
   /* if queue empty, set pointers to beginning */
-  if (!que->count) {
-    que->head = 0;
-    que->tail = -1;
+  if (!fifo->count) {
+    fifo->head = 0;
+    fifo->tail = -1;
   }
 
   /* find new tail of the circular queue */
-  if (++que->tail == que->max)
-    que->tail = 0;
-  if (++que->count > que->max) {
-    que->count = que->max;
+  if (++fifo->tail == fifo->max)
+    fifo->tail = 0;
+  if (++fifo->count > fifo->max) {
+    fifo->count = fifo->max;
     /* lose oldest packet */
-    if (++que->head == que->max)
-      que->head = 0;
-    que->loss++;
+    if (++fifo->head == fifo->max)
+      fifo->head = 0;
+    fifo->loss++;
     }
-  if (que->count > que->high)
-    que->high = que->count;
+  if (fifo->count > fifo->high)
+    fifo->high = fifo->count;
 
   /* set information in (new) tail item */
-  item = &que->item[que->tail];
+  item = &fifo->item[fifo->tail];
   item->type = type;
   item->packet.len = len;
   item->packet.used = used;
@@ -784,9 +786,9 @@ void ethq_insert_data(ETH_QUE* que, int32 type, const uint8 *data, int used, siz
   item->packet.status = status;
 }
 
-void ethq_insert(ETH_QUE* que, int32 type, ETH_PACK* pack, int32 status)
+void ethq_insert(ETH_RING_FIFO* fifo, int32 type, ETH_PACK* pack, int32 status)
 {
-ethq_insert_data(que, type, pack->oversize ? pack->oversize : pack->msg, pack->used, pack->len, pack->crc_len, NULL, status);
+ethq_insert_data(fifo, type, pack->oversize ? pack->oversize : pack->msg, pack->used, pack->len, pack->crc_len, NULL, status);
 }
 
 t_stat eth_show_devices (FILE* st, DEVICE *dptr, UNIT* uptr, int32 val, CONST char *desc)
@@ -2139,6 +2141,57 @@ _eth_callback((u_char *)opaque, &header, buf);
         SIM_UNUSED_ARG(opaque);
     }
 
+    ETH_ITEM* reader_get_buffer(ETH_DEV* dev)
+    {
+      ETH_ITEM *item;
+    
+      /* Get an item buffer */
+      if ((item = sim_tailq_dequeue_head(&dev->read_buffers)) == NULL) {
+          item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
+          if (item == NULL) {
+              sim_messagef(SCPE_MEM, "reader_get_buffer(): calloc() failed.\n");
+              return NULL;
+              }
+          }
+    
+      return item;
+    }
+    
+    void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
+    {
+      ETH_ITEM *item = reader_get_buffer(dev);
+    
+      if (item == NULL) {
+        sim_messagef(SCPE_MEM, "reader_enqueue_data(): Packet discarded.\n");
+        return;
+      }
+      
+      /* set information in (new) tail item */
+      item->type = type;
+      item->packet.len = len;
+      item->packet.used = used;
+      item->packet.crc_len = crc_len;
+      if (MAX (len, crc_len) <= sizeof (item->packet.msg)) {
+        memcpy(item->packet.msg, data, ((len > crc_len) ? len : crc_len));
+        if (crc_data && (crc_len > len))
+          memcpy(&item->packet.msg[len], crc_data, ETH_CRC_SIZE);
+        }
+      else {
+        item->packet.oversize = (uint8 *)realloc (item->packet.oversize, ((len > crc_len) ? len : crc_len));
+        memcpy(item->packet.oversize, data, ((len > crc_len) ? len : crc_len));
+        if (crc_data && (crc_len > len))
+          memcpy(&item->packet.oversize[len], crc_data, ETH_CRC_SIZE);
+        }
+      item->packet.status = status;
+    
+      sim_tailq_append(&dev->read_queue, item);
+    }
+    
+    void reader_enqueue(ETH_DEV *dev, int32 type, ETH_PACK* pack, int32 status)
+    {
+    reader_enqueue_data(dev, type, pack->oversize ? pack->oversize : pack->msg, pack->used, pack->len, pack->crc_len, NULL, status);
+    }
+    
     /*============================================================================*/
     /* The packet reader workhorse:                                               */
     /*============================================================================*/
@@ -2271,18 +2324,16 @@ char *msg = "Eth: Can't operate asynchronously, must poll.\n"
             " *** Build with USE_READER_THREAD defined and link with pthreads for asynchronous operation. ***\n";
 return sim_messagef (SCPE_NOFNC, "%s", msg);
 #else
-int wakeup_needed;
-
 dev->asynch_io = sim_asynch_enabled;
 dev->asynch_io_latency = latency;
-pthread_mutex_lock (&dev->lock);
-wakeup_needed = (dev->read_queue.count != 0);
-if (wakeup_needed) {
+if (sim_tailq_count(&dev->read_queue) > 0) {
+  pthread_mutex_lock (&dev->lock);
   sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
   sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
+  pthread_mutex_unlock (&dev->lock);
   }
-pthread_mutex_unlock (&dev->lock);
 #endif
+
 return SCPE_OK;
 }
 
@@ -2714,7 +2765,6 @@ if (1) {
   pthread_attr_t attr;
   pthread_mutexattr_t recursive;
 
-  ethq_init (&dev->read_queue, 200);         /* initialize FIFO queue */
   pthread_mutexattr_init (&recursive);
   pthread_mutexattr_settype(&recursive, PTHREAD_MUTEX_RECURSIVE);
   pthread_mutex_init (&dev->lock, NULL);
@@ -2728,8 +2778,14 @@ if (1) {
   sim_atomic_put(&dev->reader_state, ETH_THREAD_IDLE);
   sim_atomic_paired_init(&dev->writer_state, &dev->writer_lock);
   sim_atomic_put(&dev->writer_state, ETH_THREAD_IDLE);
+
+  sim_tailq_init(&dev->read_queue);
+  sim_tailq_init(&dev->read_buffers);
+  dev->read_queue_peak = 0;
+
   sim_tailq_init(&dev->write_requests);
   sim_tailq_init(&dev->write_buffers);
+  dev->write_queue_peak = 0;
 
 #if defined(__hpux)
   {
@@ -2820,17 +2876,17 @@ t_stat eth_close(ETH_DEV* dev)
     if (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
         sim_atomic_put(&dev->writer_state, ETH_THREAD_SHUTDOWN);
 
-	pthread_mutex_lock(&dev->writer_lock);
+	      pthread_mutex_lock(&dev->writer_lock);
         pthread_cond_broadcast (&dev->writer_cond);
-	pthread_mutex_unlock(&dev->writer_lock);
+	      pthread_mutex_unlock(&dev->writer_lock);
 
         dev->writer_shutdown((pcap_t *) dev->handle);
     }
 
     pthread_join (dev->writer_thread, NULL);
 
-    /* Release the FIFO queue */
-    ethq_destroy (&dev->read_queue);
+    sim_tailq_destroy(&dev->read_queue, TRUE);
+    sim_tailq_destroy(&dev->read_buffers, TRUE);
 
     /* Close the ethernet device. */
     _eth_close_port (dev->eth_api, (pcap_t *) dev->handle, dev->fd_handle);
@@ -3971,10 +4027,11 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
       crc_len = eth_get_packet_crc32_data(data, len, crc_data);
 
     eth_packet_trace (dev, data, len, "rcvqd");
+    reader_enqueue_data(dev, ETH_ITM_NORMAL, data, 0, len, crc_len, crc_data, 0);
 
-    pthread_mutex_lock (&dev->lock);
-    ethq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, len, crc_len, crc_data, 0);
-    if (dev->read_queue.count == 1 || (dev->asynch_io && !sim_unit_aio_pending(dev->dptr->units))) {
+    sim_atomic_type_t queue_count = sim_tailq_count(&dev->read_queue);
+
+    if (queue_count == 1 || (dev->asynch_io && !sim_unit_aio_pending(dev->dptr->units))) {
       /* Kick the simulator's lower half UNIT handler if the read queue's depth is 1 (just received
        * a packet) or an ansynchronous service event is not already scheduled.
        *
@@ -3982,16 +4039,21 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
        * to processes them. Otherwise, the simulator's receiver will stall and unprocessed
        * packets will accumulate. */
 
+      pthread_mutex_lock (&dev->lock);
       sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
       sim_debug(dev->dbit, dev->dptr, "Scheduling UNIT service event to drain queue (depth = %d)\n",
-                dev->read_queue.count);
-    } else {
+                queue_count);
+      pthread_mutex_unlock (&dev->lock);
+      }
+    else {
       sim_debug(dev->dbit, dev->dptr, "Deferred -- pending UNIT service event (depth = %d)\n",
-                dev->read_queue.count);
-    }
+                queue_count);
+      }
+
+    if (queue_count > dev->read_queue_peak)
+        dev->read_queue_peak = queue_count;
 
     ++dev->packets_received;
-    pthread_mutex_unlock (&dev->lock);
 
     free(moved_data);
     }
@@ -4131,16 +4193,16 @@ if (status < 0) {
 #else /* USE_READER_THREAD */
 
   status = 0;
-  pthread_mutex_lock (&dev->lock);
-  if (dev->read_queue.count > 0) {
-    ETH_ITEM* item = &dev->read_queue.item[dev->read_queue.head];
+  ETH_ITEM *item = sim_tailq_dequeue_head(&dev->read_queue);
+
+  if (item != NULL) {
     packet->len = item->packet.len;
     packet->crc_len = item->packet.crc_len;
     memcpy(packet->msg, item->packet.msg, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
     status = 1;
-    ethq_remove(&dev->read_queue);
+    sim_tailq_append(&dev->read_buffers, item);
   }
-  pthread_mutex_unlock (&dev->lock);
+
   if ((status) && (routine))
     routine(0);
 #endif
@@ -4404,9 +4466,8 @@ if (dev->eth_api == ETH_API_PCAP) {
     pcap_freecode(&bpf);
     }
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->lock);
-  ethq_clear (&dev->read_queue); /* Empty FIFO Queue when filter list changes */
-  pthread_mutex_unlock (&dev->lock);
+  /* Empty FIFO Queue when filter list changes */
+  sim_tailq_splice(&dev->read_buffers, &dev->read_queue);
 #endif
   }
 #endif /* USE_BPF */
@@ -4455,10 +4516,10 @@ if (dev->asynch_io)
   fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
 if (dev->throttle_count)
   fprintf(st, "  Throttle Delays:         %d\n", dev->throttle_count);
-fprintf(st, "  Read Queue: Count:       %d\n", dev->read_queue.count);
-fprintf(st, "  Read Queue: High:        %d\n", dev->read_queue.high);
-fprintf(st, "  Read Queue: Loss:        %d\n", dev->read_queue.loss);
-fprintf(st, "  Peak Write Queue Size:   %d\n", dev->write_queue_peak);
+fprintf(st, "  Read Queue:  Peak:       %" PRIsim_atomic "\n", dev->read_queue_peak);
+fprintf(st, "  Read Queue:  Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->read_queue));
+fprintf(st, "  Write Queue: Peak:       %" PRIsim_atomic "\n", dev->write_queue_peak);
+fprintf(st, "  Write Queue: Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->write_requests));
 #endif
 if (dev->error_needs_reset)
   fprintf(st, "  In Error Needs Reset:    True\n");

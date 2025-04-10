@@ -476,7 +476,9 @@ struct imp_device {
     uint8             sbuffer[ETH_FRAME_SIZE]; /* Temp send buffer */
     uint8             rbuffer[ETH_FRAME_SIZE]; /* Temp receive buffer */
     ETH_DEV           etherface;
+#if 0
     ETH_QUE           ReadQ;
+#endif
     int               imp_error;
     int               host_error;
     int               rfnm_count;              /* Number of pending RFNM packets */
@@ -3154,7 +3156,9 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
     if (tptr == NULL) return SCPE_MEM;
     strcpy(tptr, cptr);
 
+#if 0
     memset(&imp_data.ReadQ, 0, sizeof(ETH_QUE));
+#endif
     status = eth_open(&imp_data.etherface, cptr, &imp_dev, imp_dev.dctrl & DEBUG_ETHER);
     if (status != SCPE_OK) {
       free(tptr);
@@ -3178,6 +3182,7 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
     uptr->flags |= UNIT_ATT;
     eth_setcrc(&imp_data.etherface, 0);     /* Don't need CRC */
 
+#if 0
     /* init read queue (first time only) */
     status = ethq_init(&imp_data.ReadQ, 8);
     if (status != SCPE_OK) {
@@ -3186,6 +3191,7 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
       free(tptr);
       return sim_messagef (status, "%s: Can't initialize receive queue\n", imp_dev.name);
     }
+#endif
 
     /* Pick a relatively unique starting xid, presuming that the
        MAC address has been verified unique on the LAN by eth_open */

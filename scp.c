@@ -6790,7 +6790,7 @@ if (flag) {
     if (eth_version ())
         fprintf (st, "\n        Ethernet packet info: %s", eth_version());
 #if HAVE_STD_ATOMIC
-    fprintf (st, "\n        C11 and newer standard atomic variables.");
+    fprintf (st, "\n        C11 (and later) standard atomic variables.");
 #elif HAVE_ATOMIC_PRIMS
     fprintf (st, "\n        Atomic variables supported by platform and compiler intrinsics.");
 #else
