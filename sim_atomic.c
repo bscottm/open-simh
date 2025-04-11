@@ -200,7 +200,9 @@ sim_tailq_t *sim_tailq_take(sim_tailq_t *src, sim_tailq_t *dst)
     } while (!did_xchg);
 
     /* Update element counts. */
-    sim_atomic_put(&dst->n_elements, sim_atomic_get(&src->n_elements));
+    sim_atomic_type_t queue_count = sim_atomic_get(&src->n_elements);
+
+    sim_atomic_put(&dst->n_elements, queue_count);
     sim_atomic_put(&src->n_elements, 0);
 #else /* NEED_VALUE_LOCK */
     pthread_mutex_lock(src->lock);
@@ -224,26 +226,19 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
     if (sim_tailq_empty(from))
         return onto;
 
-    sim_tailq_t tmp;
-
 #if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
     int did_xchg;
+    sim_atomic_type_t from_count = sim_atomic_get(&from->n_elements);
 
-    /* NULL out from's head pointer, transfer into tmp. */
     do {
-        tmp.head = from->head;
-        tmp.tail = from->tail;
-        did_xchg = do_update_head(from, NULL, NULL);
+        did_xchg = do_update_tail(onto, from->head, from->tail);
+        if (did_xchg) {
+            do_update_head(from, NULL, NULL);
+        }
     } while (!did_xchg);
 
-    /* And splice onto's tail */
-    do {
-        did_xchg = do_update_tail(onto, tmp.head, tmp.tail);
-    } while (!did_xchg);
-
-    /* Update element counts. */
-    sim_atomic_add(&onto->n_elements, sim_atomic_get(&from->n_elements));
     sim_atomic_put(&from->n_elements, 0);
+    sim_atomic_add(&onto->n_elements, from_count);
 #else /* NEED_VALUE_LOCK */
     pthread_mutex_lock(onto->lock);
     pthread_mutex_lock(from->lock);

@@ -261,8 +261,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_at
 
 #if HAVE_STD_ATOMIC
     /* Returns the old p->value value. */
-    retval = atomic_fetch_sub(&p->value, x);
-    retval -= x;
+    retval = (p->value -= x);
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQ_REL)
 #    if defined(__GNUC__) || defined(__clang__)
