@@ -13740,7 +13740,7 @@ if (debug_line_offset + len + 1 > debug_line_bufsize) {
 memcpy (&debug_line_buf[debug_line_offset], buf, len);
 debug_line_buf[debug_line_offset + len] = '\0';
 debug_line_offset += len;
-while (NULL != (eol = strchr (debug_line_buf, '\n')) || flush) {
+while (NULL != (eol = strchr (debug_line_buf, '\n'))) {
     const char *endprefix = strstr (debug_line_buf, ")> ");
     size_t linesize = (eol - debug_line_buf) + 1;
 
