@@ -55,7 +55,7 @@ struct xs_device {
     ETH_DEV*            etherface;                      /* buffers, etc. */
     ETH_PACK            read_buffer;
     ETH_PACK            write_buffer;
-    ETH_QUE             ReadQ;
+    ETH_RING_FIFO       ReadQ;
     struct xs_setup     setup;
 
     uint16              csr0;                           /* LANCE registers */

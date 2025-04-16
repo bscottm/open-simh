@@ -261,32 +261,34 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
 void *sim_tailq_dequeue_head(sim_tailq_t *p)
 {
     sim_tailq_elem_t *head;
+    sim_tailq_head_t *tail;
 
     if (sim_tailq_empty(p))
         return NULL;
-
+    
 #if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
     int did_xchg;
 
     do {
         head = p->head;
-        did_xchg = do_update_head(p, p->head->next, p->tail);
+        tail = (head == NULL || head->next == NULL) ? &p->head : p->tail;
+        did_xchg = do_update_head(p, head->next, tail);
     } while (!did_xchg);
+
+    sim_atomic_dec(&p->n_elements);
 #else /* NEED_VALUE_LOCK */
     pthread_mutex_lock(p->lock);
     head = p->head;
-    p->head = p->head->next;
+    p->head = head->next;
     if (p->head == NULL)
         p->tail = &p->head;
+    sim_atomic_dec(&p->n_elements);
     pthread_mutex_unlock(p->lock);
 #endif
 
     void *elem = head->elem;
 
-    /* Free the element node. */
     free(head);
-    sim_atomic_dec(&p->n_elements);
-
     return elem;
 }
 
@@ -360,8 +362,8 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
  
  #  if HAVE_STD_ATOMIC
      did_xchg = atomic_compare_exchange_strong(&p->head, &q, new_elem);
-     if (did_xchg && p->tail != actual_tail)
-         atomic_store(&p->tail, actual_tail);
+     if (did_xchg)
+         p->tail = actual_tail;
  #  elif HAVE_ATOMIC_PRIMS
  #    if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
      did_xchg = __atomic_compare_exchange(&p->head, &q, &new_elem, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);

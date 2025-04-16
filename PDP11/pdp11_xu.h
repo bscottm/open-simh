@@ -128,7 +128,7 @@ struct xu_device {
   ETH_DEV*          etherface;
   ETH_PACK          read_buffer;
   ETH_PACK          write_buffer;
-  ETH_QUE           ReadQ;
+  ETH_RING_FIFO     ReadQ;
   ETH_MAC           load_server;                        /* load server address */
   int               idtmr;                              /* countdown for ID Timer */
   struct xu_setup   setup;

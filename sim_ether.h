@@ -405,15 +405,16 @@ t_stat eth_mac_scan (ETH_MAC mac, const char* strmac);  /* scan string for mac, 
 t_stat eth_mac_scan_ex (ETH_MAC mac,                    /* scan string for mac, put in mac */
                         const char* strmac, UNIT *uptr);/* for specified unit */
 
-/* Ethernet device ring FIFO functions: Simulator devices, such as the PDP-11 XQ
+/*! 
+ * Ethernet device ring FIFO functions: Simulator devices, such as the PDP-11 XQ
  * Ethernet device, can have fixed size send and receive ring buffers that
- * operate as packet FIFOs. (This typedef was formerly known as ETH_QUE.)*/
-
+ * operate as packet FIFOs. (This typedef was formerly known as ETH_QUE.)
+ */
 typedef struct eth_fifo_ring_s {
-  int                 max;
-  int                 count;
-  int                 head;
-  int                 tail;
+  int                 max;      /*!< Maximum eth_item's in the FIFO's ring. */
+  int                 count;    /*!< Current count of eth_item's. */
+  int                 head;     /*!< FIFO ring's head element index. */
+  int                 tail;     /*!< FIFO ring's tail element index. */
   int                 loss;
   int                 high;
   struct eth_item*    item;

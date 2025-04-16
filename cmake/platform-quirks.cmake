@@ -4,17 +4,17 @@
 # the rights to use, copy, modify, merge, publish, distribute, sublicense,
 # and/or sell copies of the Software, and to permit persons to whom the
 # Software is furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
 # THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-# 
+#
 # Except as contained in this notice, the names of The Authors shall not be
 # used in advertising or otherwise to promote the sale, use or other dealings
 # in this Software without prior written authorization from the Authors.
@@ -33,7 +33,7 @@ set(EXTRA_TARGET_CFLAGS)
 set(EXTRA_TARGET_CFLAGS)
 
 
-## Sanitizer-specific processing: 
+## Sanitizer-specific processing:
 set(HAVE_SANITIZERS (SANITIZE_ADDRESS || SANITIZE_MEMORY || SANITIZE_THREAD || SANITIZE_UNDEFINED))
 
 # For 64-bit builds (and this is especially true for MSVC), set the library
@@ -52,7 +52,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
             if (EXISTS "/usr/lib/${arch}")
                 message(STATUS "CMAKE_LIBRARY_ARCHITECTURE set to ${arch}")
                 set(CMAKE_C_LIBRARY_ARCHITECTURE "${arch}")
-                set(CMAKE_LIBRARY_ARCHITECTURE "${arch}") 
+                set(CMAKE_LIBRARY_ARCHITECTURE "${arch}")
             endif()
         endforeach()
     endif ()
@@ -67,6 +67,15 @@ if (WIN32)
     ## (keep): endif ()
 
     if (MSVC)
+        ## Unfortunately, neither the C11 or C17 standards are completely
+        ## implemented, e.g., the concurrency library. Still, let's use
+        ## the standards where we can.
+        if ("c_std_17" IN_LIST CMAKE_C_COMPILE_FEATURES)
+            set(CMAKE_C_STANDARD 17)
+        elseif ("c_std_11" IN_LIST CMAKE_C_COMPILE_FEATURES)
+            set(CMAKE_C_STANDARD 11)
+        endif ()
+
         ## Flags enabled in the SIMH VS solution (diff redution):
         ##
         ## /EHsc: Standard C++ exception handling, extern "C" functions never
@@ -186,9 +195,8 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif ()
 
 
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     # include(fpintrin)
-
 
     LIST(APPEND EXTRA_TARGET_CFLAGS
         "-U__STRICT_ANSI__"
@@ -251,7 +259,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
         ## list(APPEND opt_flags "-finline-functions" "-fgcse-after-reload" "-fpredictive-commoning"
         ##                       "-fipa-cp-clone" "-fno-unsafe-loop-optimizations" "-fno-strict-overflow")
         list(APPEND opt_flags "-fno-strict-overflow")
-    elseif (CMAKE_C_COMPILER_ID MATCHES ".*Clang")
+    elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang")
         message(STATUS "Adding Clang-specific optimizations to CMAKE_C_FLAGS_RELEASE")
         list(APPEND opt_flags "-fno-strict-overflow")
 

@@ -2141,7 +2141,7 @@ _eth_callback((u_char *)opaque, &header, buf);
         SIM_UNUSED_ARG(opaque);
     }
 
-    ETH_ITEM* reader_get_buffer(ETH_DEV* dev)
+    void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
     {
       ETH_ITEM *item;
     
@@ -2149,17 +2149,10 @@ _eth_callback((u_char *)opaque, &header, buf);
       if ((item = sim_tailq_dequeue_head(&dev->read_buffers)) == NULL) {
           item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
           if (item == NULL) {
-              sim_messagef(SCPE_MEM, "reader_get_buffer(): calloc() failed.\n");
+              sim_messagef(SCPE_MEM, "reader_enqueue_data(): calloc() failed.\n");
               return NULL;
-              }
           }
-    
-      return item;
-    }
-    
-    void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
-    {
-      ETH_ITEM *item = reader_get_buffer(dev);
+      }
     
       if (item == NULL) {
         sim_messagef(SCPE_MEM, "reader_enqueue_data(): Packet discarded.\n");
@@ -4098,7 +4091,7 @@ int status = 0;
 if ((!dev) || (dev->eth_api == ETH_API_NONE)) return 0;
 
 /* make sure packet exists */
-if (!packet) return 0;
+if (packet == NULL) return 0;
 
 packet->len = 0;
 #if !defined (USE_READER_THREAD)
@@ -4203,8 +4196,6 @@ if (status < 0) {
 
   sim_atomic_type_t queue_depth = sim_tailq_count(&dev->read_queue);
   sim_debug(dev->dbit, dev->dptr, "eth_read: queue depth %" PRIsim_atomic ", count = %d\n", queue_depth, queue_count);
-
-
 
   if (item != NULL) {
     packet->len = item->packet.len;

@@ -196,7 +196,7 @@ struct ec_device {
     ETH_PCALLBACK     wcallback;    /* write callback routine */
     ETH_MAC           mac;          /* Hardware MAC addresses */
     ETH_DEV           etherface;
-    ETH_QUE           ReadQ;
+    ETH_RING_FIFO     ReadQ;
     ETH_PACK          rec_buff[1024]; /* Buffer for received packet */
     ETH_PACK          snd_buff;     /* Buffer for sending packet */
     int               macs_n;       /* Number of multi-cast addresses */

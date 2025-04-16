@@ -67,6 +67,15 @@ if (WITH_ASYNC)
 
     if (THREADS_FOUND OR PTW_FOUND OR PThreads4W_FOUND)
         set(AIO_FLAGS USE_READER_THREAD SIM_ASYNCH_IO)
+
+        ## CMAKE_USE_PTHREADS_INIT: See CMake's FindThreads package documentation.
+        if (PTW_FOUND OR PThreads4W_FOUND OR CMAKE_USE_PTHREADS_INIT)
+            target_compile_definitions(
+                thread_lib
+                INTERFACE
+                    USING_PTHREADS
+            )
+        endif ()
     else ()
         set(AIO_FLAGS DONT_USE_READER_THREAD)
     endif ()
