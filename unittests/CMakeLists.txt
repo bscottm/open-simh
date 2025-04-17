@@ -1,3 +1,5 @@
+## For C11 atomic, concurrency detection:
+include(pthreads-dep)
 cmake_policy(SET CMP0110 NEW)
 
 ##-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -26,29 +28,6 @@ if(WIN32)
   if(NOT HAVE_NANOSLEEP)
     set(WIN_NANOSLEEP 1)
   endif()
-endif()
-
-set(C11_CONCURRENCY_LIB 0)
-file(WRITE
-${CMAKE_BINARY_DIR}/CMakeTmp/testc11std.c
-    "#if !defined(__STDC_NO_ATOMICS__) && __STDC_VERSION__ >= 201112L\n"
-    "/* C11 or newer compiler -- use the compiler's support for atomic types. */\n"
-    "#include <stdatomic.h>\n"
-    "#define HAVE_STD_ATOMIC 1\n"
-    "#else\n"
-    "#define HAVE_STD_ATOMIC 0\n"
-    "#endif\n"
-    "int main(void) { return (HAVE_STD_ATOMIC ? 0 : 1); }\n\n"
-)
-
-try_run(RUN_C11STD COMPILE_C11STD
-    SOURCES ${CMAKE_BINARY_DIR}/CMakeTmp/testc11std.c
-    RUN_OUTPUT_VARIABLE THE_C11STD
-)
-
-if (RUN_C11STD)
-    ## C11+ standard concurrency library!
-    set(C11_CONCURRENCY_LIB 1)
 endif()
 
 if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThreads4W_FOUND))
@@ -88,10 +67,6 @@ if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThread
                 __STDC_NO_THREADS__
         )
     endif ()
-
-    unset(RUN_C11STD)
-    unset(COMPILE_C11STD)
-    unset(THE_C11STD)
 
     ## Common settings for the atomic test executables:
     while (ATOMIC_TESTS)

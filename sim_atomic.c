@@ -1,6 +1,4 @@
 
-/* #define __STDC_NO_ATOMICS__ */
-
 /* Definitions needed when compiling with the unit test, test_atomic: */
 #if !defined(SIM_INLINE)
 #  if defined(_MSC_VER)
@@ -19,7 +17,7 @@
 #if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
 static SIM_INLINE sim_tailq_elem_t *get_head_node(const sim_tailq_t * const p);
 static SIM_INLINE void put_tail_node(sim_tailq_t *p, sim_tailq_head_t *node);
-static SIM_INLINE int do_update_head(sim_tailq_t *p, sim_tailq_elem_t *new_elem, sim_tailq_tail_t new_tail);
+static SIM_INLINE int do_update_head(sim_tailq_t *p, sim_tailq_elem_t *new_elem);
 static SIM_INLINE int do_update_tail(sim_tailq_t *p, sim_tailq_elem_t *new_tail, sim_tailq_head_t *next_insert);
 #endif
 
@@ -81,7 +79,7 @@ void sim_tailq_destroy(sim_tailq_t *p, int free_elems)
 
     do {
         q = p->head;
-        did_xchg = do_update_head(p, NULL, NULL);
+        did_xchg = do_update_head(p, NULL);
     } while (!did_xchg);
 #else
     pthread_mutex_lock(p->lock);
@@ -136,9 +134,13 @@ sim_tailq_t *sim_tailq_insert_head(sim_tailq_t *p, void *elem)
     int did_xchg;
 
     do {
-        /* Don't move the tail unless this is the first element. */
-        new_head->next = p->head;
-        did_xchg = do_update_head(p, new_head, (p->head != NULL ? p->tail : &new_head->next));
+        if (!sim_tailq_empty(p)) {
+            new_head->next = p->head;
+            did_xchg = do_update_head(p, new_head);
+        } else {
+            /* Inserting the first element. */
+            did_xchg = do_update_tail(p, new_head, &new_head->next);
+        }
     } while (!did_xchg);
 
     sim_atomic_inc(&p->n_elements);
@@ -196,7 +198,7 @@ sim_tailq_t *sim_tailq_take(sim_tailq_t *src, sim_tailq_t *dst)
         dst->head = src->head;
         dst->tail = src->tail;
         /* Set src's head to NULL. */
-        did_xchg = do_update_head(src, NULL, NULL);
+        did_xchg = do_update_head(src, NULL);
     } while (!did_xchg);
 
     /* Update element counts. */
@@ -233,7 +235,7 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
     do {
         did_xchg = do_update_tail(onto, from->head, from->tail);
         if (did_xchg) {
-            do_update_head(from, NULL, NULL);
+            do_update_head(from, NULL);
         }
     } while (!did_xchg);
 
@@ -261,7 +263,6 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
 void *sim_tailq_dequeue_head(sim_tailq_t *p)
 {
     sim_tailq_elem_t *head;
-    sim_tailq_head_t *tail;
 
     if (sim_tailq_empty(p))
         return NULL;
@@ -271,8 +272,7 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
 
     do {
         head = p->head;
-        tail = (head == NULL || head->next == NULL) ? &p->head : p->tail;
-        did_xchg = do_update_head(p, head->next, tail);
+        did_xchg = do_update_head(p, head->next);
     } while (!did_xchg);
 
     sim_atomic_dec(&p->n_elements);
@@ -348,31 +348,30 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
   *
   * \param[in] p The tail queue to alter
   * \param[in] new_elem New element node to queue at the head
-  * \param[in] new_tail If new_elem == NULL (p will now become an empty tail queue), new_tail points
-  *     to &p->head. Otherwise, new_tail is the next insertion point.
   * 
   * \return 0 if the compare/exchange failed (rare), otherwise 1 if the compare/exchange suceeded.
   */
- static SIM_INLINE int do_update_head(sim_tailq_t *p, sim_tailq_elem_t *new_elem, sim_tailq_tail_t new_tail)
+ static SIM_INLINE int do_update_head(sim_tailq_t *p, sim_tailq_elem_t *new_elem)
  {
      int                did_xchg = -1;
      sim_tailq_elem_t  *q = get_head_node(p);
-     /* If the new element is NULL, ensure next insertion is at the tail queue's head. */
-     sim_tailq_head_t  *actual_tail = (new_elem != NULL ? new_tail : &p->head);
  
  #  if HAVE_STD_ATOMIC
      did_xchg = atomic_compare_exchange_strong(&p->head, &q, new_elem);
-     if (did_xchg)
-         p->tail = actual_tail;
+     if (did_xchg && new_elem == NULL)
+         p->tail = &p->head;
  #  elif HAVE_ATOMIC_PRIMS
  #    if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
      did_xchg = __atomic_compare_exchange(&p->head, &q, &new_elem, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-     if (did_xchg)
-         __atomic_store(&p->tail, &actual_tail, __ATOMIC_SEQ_CST);
+     if (did_xchg && new_elem == NULL) {
+        sim_tailq_head_t *head_insert = &p->head;
+
+         __atomic_store(&p->tail, &head_insert, __ATOMIC_SEQ_CST);
+     }
  #    elif defined(_WIN32) || defined(_WIN64)
      did_xchg = (InterlockedCompareExchangePointer(&p->head, new_elem, q) == q);
-     if (did_xchg && p->tail != actual_tail)
-         InterlockedExchangePointer((PVOID volatile *) &p->tail, (PVOID) actual_tail);
+     if (did_xchg && new_elem == NULL)
+         InterlockedExchangePointer((PVOID volatile *) &p->tail, (PVOID) &p->head);
  #    endif
  #  endif
  
@@ -382,23 +381,18 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
  static SIM_INLINE int do_update_tail(sim_tailq_t *p, sim_tailq_elem_t *new_tail, sim_tailq_head_t *next_insert)
  {
      int did_xchg = -1;
-     sim_tailq_tail_t  cur_tail = p->tail;
+     sim_tailq_head_t *cur_tail = p->tail;
  
      /* Update the list's tail pointer first, then commit the head or next link. */
  
  #if HAVE_STD_ATOMIC
-         sim_tailq_head_t *tail_val = atomic_load(&p->tail);
- 
-         did_xchg = atomic_compare_exchange_strong(&p->tail, &tail_val, next_insert);
+         did_xchg = atomic_compare_exchange_strong(&p->tail, &cur_tail, next_insert);
          if (did_xchg) {
              atomic_store(cur_tail, new_tail);
          }
  #elif HAVE_ATOMIC_PRIMS
  #  if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
-         sim_tailq_head_t *tail_val;
-        
-         __atomic_load(&p->tail, &tail_val, __ATOMIC_SEQ_CST);
-         did_xchg = __atomic_compare_exchange(&p->tail, &tail_val, &next_insert, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+         did_xchg = __atomic_compare_exchange(&p->tail, &cur_tail, &next_insert, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
          if (did_xchg)
              __atomic_store(cur_tail, &new_tail, __ATOMIC_SEQ_CST);
  #  elif defined(_WIN32) || defined(_WIN64)
@@ -412,4 +406,3 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
      return did_xchg;
  }
  #endif
- 

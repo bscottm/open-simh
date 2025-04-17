@@ -357,7 +357,7 @@ typedef struct sim_tailq_elem_s {
     SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
 } sim_tailq_elem_t;
 
-typedef SIM_ATOMIC_TYPE(sim_tailq_elem_t *)  sim_tailq_head_t;
+typedef SIM_ATOMIC_TYPE(sim_tailq_elem_t *) sim_tailq_head_t;
 typedef SIM_ATOMIC_TYPE(sim_tailq_head_t *) sim_tailq_tail_t;
 
 /* The list type, itself. */

@@ -1,19 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <time.h>
-
-/* Using C11+ concurrency? */
-#if !defined(__STDC_NO_THREADS__) && __STDC_VERSION__ >= 201112L
-#include <threads.h>
-#define HAVE_STD_THREADS 1
-
-typedef cnd_t sim_cond_t;
-typedef mtx_t sim_mutex_t;
-#elif defined(USING_PTHREADS)
-#define HAVE_STD_THREADS 0
-#endif
 
 /* Definitions from sim_defs.h without all of the overhead. */
 
@@ -32,6 +22,7 @@ typedef mtx_t sim_mutex_t;
 
 #include <unity.h>
 #include "sim_atomic.h"
+#include "sim_threads.h"
 
 /* Forward decl's for the tests. */
 void os_check_malloc();
@@ -39,6 +30,8 @@ void test_insert_head_tail(void);
 void test_mixed_inserts(void);
 void test_tailq_take_splice(void);
 void test_thread_head_tail(void);
+
+static inline uint32_t sim_tailq_actual(sim_tailq_t *tailq);
 
 /* And Win32 compatibility functions: */
 #if defined(WIN_NANOSLEEP) && WIN_NANOSLEEP
@@ -144,7 +137,7 @@ void os_check_malloc()
 void test_insert_head_tail(void)
 {
     sim_tailq_t l;
-    sim_tailq_elem_t *p;
+    sim_tailq_elem_t const *p;
     size_t i, j;
 
     /* Head inserts: */
@@ -277,27 +270,14 @@ typedef struct {
     sim_atomic_value_t state;   /*!< The reader thread's state. */
     rand_state_t prng;          /*!< Pseudo-random number generator state. */
 
-#if HAVE_STD_THREADS
-    cnd_t empty_queue_cond;
-    mtx_t empty_queue_mtx;
-    cnd_t startup_cond;
-    mtx_t startup_mtx;
-#elif defined(USING_PTHREADS)
-    pthread_cond_t empty_queue_cond;
-    pthread_mutex_t empty_queue_mtx;
-    pthread_cond_t startup_cond;
-    pthread_mutex_t startup_mtx;
-#endif
+    sim_cond_t empty_queue_cond;
+    sim_mutex_t empty_queue_mtx;
+    sim_cond_t startup_cond;
+    sim_mutex_t startup_mtx;
 } head_tail_startup_t;
 
 static const int reader_iter_limit = 10244;
 static int reader_test_elem = 0x0abc1234;
-
-#if HAVE_STD_THREADS
-#define THREAD_FUNC_DECL(FUNC) int FUNC(void *arg)
-#elif defined(USING_PTHREADS)
-#define THREAD_FUNC_DECL(FUNC) void *FUNC(void *arg)
-#endif
 
 THREAD_FUNC_DECL(dequeue_head_reader);
 
@@ -354,13 +334,7 @@ void test_thread_head_tail(void)
 
         while (burst > 0) {
             if ((i % 1000) == 0) {
-                int queue_count = 0;
-                sim_tailq_elem_t *p;
-              
-                for (p = sim_tailq_iter_head(&tailq); p != NULL; p = sim_tailq_iter_next(p))
-                  ++queue_count;
-              
-                printf("%5d writer (%" PRIsim_atomic ", %d)...\n", i, sim_tailq_count(&tailq), queue_count);
+                printf("%5d writer (%" PRIsim_atomic ", %d)...\n", i, sim_tailq_count(&tailq), sim_tailq_actual(&tailq));
                 fflush(stdout);
             }
 
@@ -427,13 +401,11 @@ thrd_join(reader, &reader_exitval);
     sim_tailq_destroy(&tailq, 0);
 }
 
-THREAD_FUNC_DECL(dequeue_head_reader)
+THREAD_FUNC_DEFN(dequeue_head_reader)
 {
     head_tail_startup_t *info = (head_tail_startup_t *) arg;
     uint32_t burst = rand_int_range(info->prng, 1, 11);
     int iter = 0;
-    int queue_count = 0;
-    sim_tailq_elem_t *p;
 
     sim_atomic_put(&info->state, READER_RUNNING);
 
@@ -466,11 +438,7 @@ THREAD_FUNC_DECL(dequeue_head_reader)
             TEST_ASSERT_EQUAL(reader_test_elem, *item);
 
             if ((iter % 1000) == 0) {
-                queue_count = 0;
-                for (p = sim_tailq_iter_head(info->tailq); p != NULL; p = sim_tailq_iter_next(p))
-                  ++queue_count;
-              
-                printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), queue_count);
+                printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
                 fflush(stdout);
             }
 
@@ -493,20 +461,34 @@ THREAD_FUNC_DECL(dequeue_head_reader)
     }
 
     while (sim_tailq_count(info->tailq) > 0) {
-        sim_tailq_dequeue_head(info->tailq);
-        ++iter;
+        if (sim_tailq_dequeue_head(info->tailq) != NULL) {
+            if ((++iter % 1000) == 0) {
+                printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
+                fflush(stdout);
+            }
+        } else {
+            TEST_FAIL_MESSAGE("reader - residual: Dequeue head, no more elements.");
+            break;
+        }
     }
   
-    queue_count = 0;
-    for (p = sim_tailq_iter_head(info->tailq); p != NULL; p = sim_tailq_iter_next(p))
-      ++queue_count;
-  
-    printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), queue_count);
+    printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
     fflush(stdout);
 
     sim_atomic_put(&info->state, READER_EXITED);
 
     return 0;
+}
+
+static inline uint32_t sim_tailq_actual(sim_tailq_t *tailq)
+{
+    uint32_t queue_count = 0;
+    sim_tailq_elem_t *p;
+    
+    for (p = sim_tailq_iter_head(tailq); p != NULL; p = sim_tailq_iter_next(p))
+      ++queue_count;
+
+    return queue_count;
 }
 
 #if defined(WIN_NANOSLEEP) && WIN_NANOSLEEP

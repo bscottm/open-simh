@@ -2150,7 +2150,7 @@ _eth_callback((u_char *)opaque, &header, buf);
           item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
           if (item == NULL) {
               sim_messagef(SCPE_MEM, "reader_enqueue_data(): calloc() failed.\n");
-              return NULL;
+              return;
           }
       }
     
