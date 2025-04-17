@@ -10,25 +10,25 @@ if (TARGET thread_lib)
     return()
 endif()
 
+include(CheckIncludeFile)
+
 add_library(thread_lib INTERFACE)
 set(AIO_FLAGS)
 
 ## Look for the C11 and later standard concurrency library:
 
-set(C11_CONCURRENCY_LIB 0)
-set(C11_STANDARD_ATOMIC 0)
+set(C11_CONCURRENCY_LIB FALSE)
+set(C11_STANDARD_ATOMIC FALSE)
 
 if (WITH_ASYNC)
     file(WRITE
         ${CMAKE_BINARY_DIR}/CMakeTmp/testc11atomic.c
-            "#if __STDC_VERSION__ >= 201112L\n"
-            "#  if !defined(__STDC_NO_ATOMICS__)\n"
+            "#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)\n"
             "   /* C11 or newer compiler -- use the compiler's support for atomic types. */\n"
-            "#    include <stdatomic.h>\n"
-            "#    define HAVE_STD_ATOMIC 1\n"
-            "#  else\n"
-            "#    define HAVE_STD_ATOMIC 0\n"
-            "#  endif\n"
+            "#  include <stdatomic.h>\n"
+            "#  define HAVE_STD_ATOMIC 1\n"
+            "#else\n"
+            "#  define HAVE_STD_ATOMIC 0\n"
             "#endif\n"
             "int main(void) { return ((HAVE_STD_ATOMIC) ? 0 : 1); }\n\n"
     )
@@ -39,23 +39,21 @@ if (WITH_ASYNC)
         RUN_OUTPUT_VARIABLE THE_C11STD
     )
 
-    if (RUN_C11STD)
+    if (RUN_C11STD EQUAL 0)
         ## C11+ standard atomic variable support:
         message(STATUS "C11 and later standard atomic variables")
-        set(C11_STANDARD_ATOMIC 1)
+        set(C11_STANDARD_ATOMIC TRUE)
     endif()
 
     file(WRITE
         ${CMAKE_BINARY_DIR}/CMakeTmp/testc11thrd.c
-        "#if __STDC_VERSION__ >= 201112L\n"
-        "#  if !defined(__STDC_NO_THREADS__)\n"
-        "#    include <threads.h>\n"
-        "#    define HAVE_STD_THREADS 1\n"
-        "#  else\n"
-        "#    define HAVE_STD_THREADS 0\n"
-        "#  endif\n"
+        "#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)\n"
+        "#  include <threads.h>\n"
+        "#  define HAVE_STD_THREADS 1\n"
+        "#else\n"
+        "#  define HAVE_STD_THREADS 0\n"
         "#endif\n"
-        "int main(void) { return (HAVE_STD_THREADS ? 0 : 1); }\n\n"
+        "int main(void) { return ((HAVE_STD_THREADS) ? 0 : 1); }\n\n"
     )
 
     try_run(RUN_C11STD COMPILE_C11STD
@@ -64,10 +62,21 @@ if (WITH_ASYNC)
         RUN_OUTPUT_VARIABLE THE_C11STD
     )
 
-    if (RUN_C11STD)
+    if (NOT COMPILE_C11STD AND (WIN32 OR MINGW))
+        ## The MinGW gcc and clang don't ship with a threads.h, so ensure that
+        ## sim_threads.h doesn't accidentally think that it exists.
+        check_include_file(threads.h C11_STD_THREADS_H)
+        if (NOT C11_STD_THREADS_H)
+            target_compile_definitions(
+                thread_lib
+                INTERFACE
+                    __STDC_NO_THREADS__
+            )
+        endif ()
+    elseif (RUN_C11STD EQUAL 0)
         ## C11+ standard concurrency library support:
         message(STATUS "C11 and later standard concurrency library")
-        set(C11_CONCURRENCY_LIB 1)
+        set(C11_CONCURRENCY_LIB TRUE)
     endif()
 
     unset(RUN_C11STD)
@@ -129,13 +138,6 @@ if (WITH_ASYNC)
         set(THREADING_PKG_STATUS "Platform-detected threading support")
     endif ()
 
-    target_compile_definitions(
-        thread_lib
-        INTERFACE
-            C11_CONCURRENCY_LIB=${C11_CONCURRENCY_LIB}
-            C11_STANDARD_ATOMIC=${C11_STANDARD_ATOMIC}   
-    )
-
     if (THREADS_FOUND OR PTW_FOUND OR PThreads4W_FOUND)
         set(AIO_FLAGS USE_READER_THREAD SIM_ASYNCH_IO)
 
@@ -144,7 +146,7 @@ if (WITH_ASYNC)
             target_compile_definitions(
                 thread_lib
                 INTERFACE
-                    USING_PTHREADS
+                    USING_PTHREADS=$<IF:$<BOOL:${C11_CONCURRENCY_LIB}>,0,1>
             )
         endif ()
     else ()

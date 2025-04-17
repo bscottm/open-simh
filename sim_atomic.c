@@ -33,26 +33,20 @@ void sim_tailq_init(sim_tailq_t *p)
     put_tail_node(p, &p->head);
     sim_atomic_init(&p->n_elements);
 #else
-    pthread_mutexattr_t recursive;
-
     p->tail = &p->head;
 
     /* This mutex is paired with the element counter. */
     p->paired = 0;
-    p->lock = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
+    p->lock = (sim_mutex_t *) malloc(sizeof(sim_mutex_t));
 
-    pthread_mutexattr_init (&recursive);
-    pthread_mutexattr_settype(&recursive, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(p->lock, &recursive);
-    pthread_mutexattr_destroy(&recursive);
-
+    sim_mutex_recursive(p->lock);
     sim_atomic_paired_init(&p->n_elements, p->lock);
 #endif
 
     sim_atomic_put(&p->n_elements, 0);
 }
 
-void sim_tailq_paired_init(sim_tailq_t *p, pthread_mutex_t *mutex)
+void sim_tailq_paired_init(sim_tailq_t *p, sim_mutex_t *mutex)
 {
     p->head = NULL;
 
@@ -82,13 +76,13 @@ void sim_tailq_destroy(sim_tailq_t *p, int free_elems)
         did_xchg = do_update_head(p, NULL);
     } while (!did_xchg);
 #else
-    pthread_mutex_lock(p->lock);
+    sim_mutex_lock(p->lock);
     q = p->head;
     p->head = NULL;
-    pthread_mutex_unlock(p->lock);
+    sim_mutex_unlock(p->lock);
     
     if (!p->paired) {
-        pthread_mutex_destroy(p->lock);
+        sim_mutex_destroy(p->lock);
         free(p->lock);
     }
 
@@ -145,13 +139,13 @@ sim_tailq_t *sim_tailq_insert_head(sim_tailq_t *p, void *elem)
 
     sim_atomic_inc(&p->n_elements);
 #else /* NEED_VALUE_LOCK */
-    pthread_mutex_lock(p->lock);
+    sim_mutex_lock(p->lock);
     if (p->head == NULL)
         p->tail = &new_head->next;
     new_head->next = p->head;
     p->head = new_head;
     sim_atomic_inc(&p->n_elements);
-    pthread_mutex_unlock(p->lock);
+    sim_mutex_unlock(p->lock);
 #endif
 
     return p;
@@ -175,11 +169,11 @@ sim_tailq_t *sim_tailq_append(sim_tailq_t *p, void *elem)
 
     sim_atomic_inc(&p->n_elements);
 #else /* NEED_VALUE_LOCK */
-    pthread_mutex_lock(p->lock);
+    sim_mutex_lock(p->lock);
     (*p->tail) = new_tail;
     p->tail = &new_tail->next;
     sim_atomic_inc(&p->n_elements);
-    pthread_mutex_unlock(p->lock);
+    sim_mutex_unlock(p->lock);
 #endif
 
     return p;
@@ -207,16 +201,16 @@ sim_tailq_t *sim_tailq_take(sim_tailq_t *src, sim_tailq_t *dst)
     sim_atomic_put(&dst->n_elements, queue_count);
     sim_atomic_put(&src->n_elements, 0);
 #else /* NEED_VALUE_LOCK */
-    pthread_mutex_lock(src->lock);
-    pthread_mutex_lock(dst->lock);
+    sim_mutex_lock(src->lock);
+    sim_mutex_lock(dst->lock);
     dst->head = src->head;
     dst->tail = src->tail;
     src->head = NULL;
     src->tail = &src->head;
     sim_atomic_put(&dst->n_elements, sim_atomic_get(&src->n_elements));
     sim_atomic_put(&src->n_elements, 0);
-    pthread_mutex_unlock(dst->lock);
-    pthread_mutex_unlock(src->lock);
+    sim_mutex_unlock(dst->lock);
+    sim_mutex_unlock(src->lock);
 #endif
 
     return dst;
@@ -242,8 +236,8 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
     sim_atomic_put(&from->n_elements, 0);
     sim_atomic_add(&onto->n_elements, from_count);
 #else /* NEED_VALUE_LOCK */
-    pthread_mutex_lock(onto->lock);
-    pthread_mutex_lock(from->lock);
+    sim_mutex_lock(onto->lock);
+    sim_mutex_lock(from->lock);
 
     (*onto->tail) = from->head;
     onto->tail = from->tail;
@@ -253,8 +247,8 @@ sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from)
     from->tail = &from->head;
     sim_atomic_put(&from->n_elements, 0);
 
-    pthread_mutex_unlock(from->lock);
-    pthread_mutex_unlock(onto->lock);
+    sim_mutex_unlock(from->lock);
+    sim_mutex_unlock(onto->lock);
 #endif
 
     return onto;
@@ -277,13 +271,13 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
 
     sim_atomic_dec(&p->n_elements);
 #else /* NEED_VALUE_LOCK */
-    pthread_mutex_lock(p->lock);
+    sim_mutex_lock(p->lock);
     head = p->head;
     p->head = head->next;
     if (p->head == NULL)
         p->tail = &p->head;
     sim_atomic_dec(&p->n_elements);
-    pthread_mutex_unlock(p->lock);
+    sim_mutex_unlock(p->lock);
 #endif
 
     void *elem = head->elem;

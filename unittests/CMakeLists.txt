@@ -51,7 +51,7 @@ if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThread
             SIM_ATOMIC_MUTEX_ONLY
     )
 
-    if (RUN_C11STD EQUAL 0 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang"))
+    if (RUN_C11STD EQUAL 0 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang"))
         message(STATUS "C11 and later standard atomics, adding test_atomic_nostd unit test.")
         list(APPEND ATOMIC_TESTS "test_atomic_nostd" "atomic:compiler intrinsics")
 
@@ -64,7 +64,6 @@ if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThread
             test_atomic_nostd
             PRIVATE
                 __STDC_NO_ATOMICS__
-                __STDC_NO_THREADS__
         )
     endif ()
 

@@ -295,31 +295,17 @@ void test_thread_head_tail(void)
     sim_atomic_put(&info.state, READER_INIT);
     rand_init(info.prng);
 
-#if HAVE_STD_THREADS
-    thrd_t reader;
+    sim_cond_init(&info.empty_queue_cond);
+    sim_mutex_init(&info.empty_queue_mtx);
+    sim_cond_init(&info.startup_cond);
+    sim_mutex_init(&info.startup_mtx);
 
-    cnd_init(&info.empty_queue_cond);
-    mtx_init(&info.empty_queue_mtx, mtx_plain);
-    cnd_init(&info.startup_cond);
-    mtx_init(&info.startup_mtx, mtx_plain);
+    sim_thread_t reader;
 
-    mtx_lock(&info.startup_mtx);
-    thrd_create(&reader, dequeue_head_reader, &info);
-    cnd_wait(&info.startup_cond, &info.startup_mtx);
-    mtx_unlock(&info.startup_mtx);
-#elif defined(USING_PTHREADS)
-    pthread_t reader;
-
-    pthread_cond_init(&info.empty_queue_cond, NULL);
-    pthread_mutex_init(&info.empty_queue_mtx, NULL);
-    pthread_cond_init(&info.startup_cond, NULL);
-    pthread_mutex_init(&info.startup_mtx, NULL);
-
-    pthread_mutex_lock(&info.startup_mtx);
-    pthread_create(&reader, NULL, dequeue_head_reader, &info);
-    pthread_cond_wait(&info.startup_cond, &info.startup_mtx);
-    pthread_mutex_unlock(&info.startup_mtx);
-#endif
+    sim_mutex_lock(&info.startup_mtx);
+    sim_thread_create(&reader, dequeue_head_reader, &info);
+    sim_cond_wait(&info.startup_cond, &info.startup_mtx);
+    sim_mutex_unlock(&info.startup_mtx);
 
     TEST_ASSERT_EQUAL(sim_atomic_get(&info.state), READER_RUNNING);
 
@@ -344,15 +330,9 @@ void test_thread_head_tail(void)
         }
 
         if (sim_tailq_count(&tailq) > 1) {
-#if HAVE_STD_THREADS
-            mtx_lock(&info.empty_queue_mtx);
-            cnd_signal(&info.empty_queue_cond);
-            mtx_unlock(&info.empty_queue_mtx);
-#elif defined(USING_PTHREADS)
-            pthread_mutex_lock(&info.empty_queue_mtx);
-            pthread_cond_signal(&info.empty_queue_cond);
-            pthread_mutex_unlock(&info.empty_queue_mtx);
-#endif
+            sim_mutex_lock(&info.empty_queue_mtx);
+            sim_cond_signal(&info.empty_queue_cond);
+            sim_mutex_unlock(&info.empty_queue_mtx);
         }
 
         nanosleep(&delay100us, NULL);
@@ -361,42 +341,22 @@ void test_thread_head_tail(void)
     printf("%5d writer done.\n", i);
 
     sim_atomic_put(&info.state, READER_SHUTDOWN);
-#if HAVE_STD_THREADS
-    mtx_lock(&info.empty_queue_mtx);
-    cnd_signal(&info.empty_queue_cond);
-    mtx_unlock(&info.empty_queue_mtx);
-#elif defined(USING_PTHREADS)
-    pthread_mutex_lock(&info.empty_queue_mtx);
-    pthread_cond_signal(&info.empty_queue_cond);
-    pthread_mutex_unlock(&info.empty_queue_mtx);
-#endif
+    sim_mutex_lock(&info.empty_queue_mtx);
+    sim_cond_signal(&info.empty_queue_cond);
+    sim_mutex_unlock(&info.empty_queue_mtx);
 
+    sim_thread_exit_t reader_exitval;
 
-#if HAVE_STD_THREADS
-    int reader_exitval;
-
-thrd_join(reader, &reader_exitval);
-#elif defined(USING_PTHREADS)
-    void *reader_exitval;
-
-    pthread_join(reader, &reader_exitval);
-#endif
+    sim_thread_join(reader, &reader_exitval);
 
     TEST_ASSERT_EQUAL(READER_EXITED, sim_atomic_get(&info.state));
     TEST_ASSERT_EQUAL(0, sim_tailq_count(&tailq));
     TEST_ASSERT_TRUE(sim_tailq_empty(&tailq));
 
-#if HAVE_STD_THREADS
-    cnd_destroy(&info.startup_cond);
-    mtx_destroy(&info.startup_mtx);
-    cnd_destroy(&info.empty_queue_cond);
-    mtx_destroy(&info.empty_queue_mtx);
-#elif defined(USING_PTHREADS)
-    pthread_cond_destroy(&info.startup_cond);
-    pthread_mutex_destroy(&info.startup_mtx);
-    pthread_cond_destroy(&info.empty_queue_cond);
-    pthread_mutex_destroy(&info.empty_queue_mtx);
-#endif
+    sim_cond_destroy(&info.startup_cond);
+    sim_mutex_destroy(&info.startup_mtx);
+    sim_cond_destroy(&info.empty_queue_cond);
+    sim_mutex_destroy(&info.empty_queue_mtx);
 
     sim_tailq_destroy(&tailq, 0);
 }
@@ -409,36 +369,24 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
 
     sim_atomic_put(&info->state, READER_RUNNING);
 
-#if HAVE_STD_THREADS
-    mtx_lock(&info->startup_mtx);
-    cnd_signal(&info->startup_cond);
-    mtx_unlock(&info->startup_mtx);
-#elif defined(USING_PTHREADS)
-    pthread_mutex_lock(&info->startup_mtx);
-    pthread_cond_signal(&info->startup_cond);
-    pthread_mutex_unlock(&info->startup_mtx);
-#endif
+    sim_mutex_lock(&info->startup_mtx);
+    sim_cond_signal(&info->startup_cond);
+    sim_mutex_unlock(&info->startup_mtx);
 
     while (sim_atomic_get(&info->state) == READER_RUNNING) {
         int *item = (int *) sim_tailq_dequeue_head(info->tailq);
         
         if (item == NULL) {
-#if HAVE_STD_THREADS
-            mtx_lock(&info->empty_queue_mtx);
-            cnd_wait(&info->empty_queue_cond, &info->empty_queue_mtx);
-            mtx_unlock(&info->empty_queue_mtx);
-#elif defined(USING_PTHREADS)
-            pthread_mutex_unlock(&info->empty_queue_mtx);
-            pthread_cond_wait(&info->empty_queue_cond, &info->empty_queue_mtx);
-            pthread_mutex_unlock(&info->empty_queue_mtx);
-#endif
+            sim_mutex_lock(&info->empty_queue_mtx);
+            sim_cond_wait(&info->empty_queue_cond, &info->empty_queue_mtx);
+            sim_mutex_unlock(&info->empty_queue_mtx);
 
             burst = rand_int_range(info->prng, 1, 11);
         } else {
             TEST_ASSERT_EQUAL(reader_test_elem, *item);
 
             if ((iter % 1000) == 0) {
-                printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
+                printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
                 fflush(stdout);
             }
 
@@ -463,7 +411,7 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
     while (sim_tailq_count(info->tailq) > 0) {
         if (sim_tailq_dequeue_head(info->tailq) != NULL) {
             if ((++iter % 1000) == 0) {
-                printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
+                printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
                 fflush(stdout);
             }
         } else {
@@ -472,7 +420,7 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
         }
     }
   
-    printf("%5d reader (%" PRIsim_atomic ", %d)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
+    printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
     fflush(stdout);
 
     sim_atomic_put(&info->state, READER_EXITED);
@@ -494,7 +442,7 @@ static inline uint32_t sim_tailq_actual(sim_tailq_t *tailq)
 #if defined(WIN_NANOSLEEP) && WIN_NANOSLEEP
 // nanosleep(), clock_gettime(), clock_getres() for Windows
 
-#ifndef __has_c_attribute
+#if !defined(__has_c_attribute)
 #define __has_c_attribute(x) 0
 #endif
 
