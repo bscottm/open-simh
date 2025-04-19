@@ -2188,7 +2188,7 @@ _eth_callback((u_char *)opaque, &header, buf);
     /*============================================================================*/
     /* The packet reader workhorse:                                               */
     /*============================================================================*/
-    static void *_eth_reader(void *arg)
+    static THREAD_FUNC_DEFN(_eth_reader)
     {
         ETH_DEV *dev = (ETH_DEV*) arg;
 
@@ -2201,9 +2201,9 @@ _eth_callback((u_char *)opaque, &header, buf);
         sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
         /* Signal that we've started... */
-        pthread_mutex_lock(&dev->startup_lock);
-        pthread_cond_signal(&dev->startup_cond);
-        pthread_mutex_unlock(&dev->startup_lock);
+        sim_mutex_lock(&dev->startup_lock);
+        sim_cond_signal(&dev->startup_cond);
+        sim_mutex_unlock(&dev->startup_lock);
 
         /* Off to the races... */
         while (sim_atomic_get(&dev->reader_state) == ETH_THREAD_RUNNING) {
@@ -2220,13 +2220,13 @@ _eth_callback((u_char *)opaque, &header, buf);
 
         sim_atomic_put(&dev->reader_state, ETH_THREAD_EXITED);
         sim_debug(dev->dbit, dev->dptr, "Reader Thread Exiting\n");
-        return NULL;
+        return THREAD_FUNC_RETURN(0);
     }
 
     /*============================================================================*/
     /* The packet writer workhorse:                                               */
     /*============================================================================*/
-    static void *_eth_writer(void *arg)
+    static THREAD_FUNC_DEFN(_eth_writer)
     {
         ETH_DEV *dev = (ETH_DEV*) arg;
         sim_tailq_t request;
@@ -2242,9 +2242,9 @@ _eth_callback((u_char *)opaque, &header, buf);
         sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
 
         /* Signal that we've started... */
-        pthread_mutex_lock(&dev->startup_lock);
-        pthread_cond_signal(&dev->startup_cond);
-        pthread_mutex_unlock(&dev->startup_lock);
+        sim_mutex_lock(&dev->startup_lock);
+        sim_cond_signal(&dev->startup_cond);
+        sim_mutex_unlock(&dev->startup_lock);
 
         while (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
             if (work_unit != NULL) {
@@ -2290,9 +2290,9 @@ _eth_callback((u_char *)opaque, &header, buf);
                         cond_until.tv_nsec = cond_until.tv_nsec % 1000000000;
                     }
                       
-                    pthread_mutex_lock (&dev->writer_lock);
-                    pthread_cond_timedwait (&dev->writer_cond, &dev->writer_lock, &cond_until);
-                    pthread_mutex_unlock (&dev->writer_lock);
+                    sim_mutex_lock (&dev->writer_lock);
+                    sim_cond_timedwait (&dev->writer_cond, &dev->writer_lock, &cond_until);
+                    sim_mutex_unlock (&dev->writer_lock);
                 } else {
                     sim_tailq_take(&dev->write_requests, &request);
                     work_unit = sim_tailq_iter_head(&request);
@@ -2302,7 +2302,7 @@ _eth_callback((u_char *)opaque, &header, buf);
 
         sim_atomic_put(&dev->writer_state, ETH_THREAD_EXITED);
         sim_debug(dev->dbit, dev->dptr, "Writer Thread Exiting\n");
-        return NULL;
+        return THREAD_FUNC_RETURN(0);
     }
 #endif
 
@@ -2755,17 +2755,17 @@ dev->dbit = dbit;
 
 #if defined (USE_READER_THREAD)
 if (1) {
+#if defined(USING_PTHREADS) && USING_PTHREADS
   pthread_attr_t attr;
-  pthread_mutexattr_t recursive;
 
-  pthread_mutexattr_init (&recursive);
-  pthread_mutexattr_settype(&recursive, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init (&dev->lock, NULL);
-  pthread_mutex_init (&dev->writer_lock, &recursive);
-  pthread_mutex_init (&dev->self_lock, NULL);
-  pthread_cond_init (&dev->writer_cond, NULL);
   pthread_attr_init(&attr);
   pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+#endif
+
+  sim_mutex_recursive(&dev->lock);
+  sim_mutex_recursive(&dev->writer_lock);
+  sim_mutex_init (&dev->self_lock);
+  sim_cond_init (&dev->writer_cond);
 
   sim_atomic_init(&dev->reader_state);
   sim_atomic_put(&dev->reader_state, ETH_THREAD_IDLE);
@@ -2780,7 +2780,7 @@ if (1) {
   sim_tailq_init(&dev->write_buffers);
   dev->write_queue_peak = 0;
 
-#if defined(__hpux)
+#if defined(__hpux) && defined(USING_PTHREADS) && USING_PTHREADS
   {
     /* libpcap needs sizeof(long) * 8192 bytes on the stack */
     size_t stack_size;
@@ -2791,25 +2791,35 @@ if (1) {
   }
 #endif /* defined(__hpux) */
 
-  pthread_mutex_init(&dev->startup_lock, NULL);
-  pthread_cond_init(&dev->startup_cond, NULL);
+  sim_mutex_init(&dev->startup_lock);
+  sim_cond_init(&dev->startup_cond);
 
-  pthread_mutex_lock(&dev->startup_lock);
-  pthread_create (&dev->reader_thread, &attr, _eth_reader, (void *)dev);
-  pthread_cond_wait(&dev->startup_cond, &dev->startup_lock);
+  sim_mutex_lock(&dev->startup_lock);
+#if defined(USING_PTHREADS) && USING_PTHREADS
+  pthread_create (&dev->reader_thread, &attr, _eth_reader, dev);
+#else
+  sim_thread_create(&dev->reader_thread, _eth_reader, dev);
+#endif
+  sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
   /* Note: Do not need to unlock startup_lock, since we received it
    * in a locked state from the prior condvar wait AND we'll reuse
    * it in the next condvar wait. */
 
   /* Ensure the write thread has started. */
-  pthread_create (&dev->writer_thread, &attr, _eth_writer, (void *)dev);
-  pthread_cond_wait(&dev->startup_cond, &dev->startup_lock);
-  pthread_mutex_unlock(&dev->startup_lock);
+#if defined(USING_PTHREADS) && USING_PTHREADS
+  pthread_create (&dev->writer_thread, &attr, _eth_writer, dev);
+#else
+  sim_thread_create(&dev->writer_thread, _eth_writer, dev);
+#endif
+  sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
+  sim_mutex_unlock(&dev->startup_lock);
 
+#if defined(USING_PTHREADS) && USING_PTHREADS
   pthread_attr_destroy(&attr);
-  pthread_mutexattr_destroy(&recursive);
-  pthread_mutex_destroy(&dev->startup_lock);
-  pthread_cond_destroy(&dev->startup_cond);
+#endif
+  
+  sim_mutex_destroy(&dev->startup_lock);
+  sim_cond_destroy(&dev->startup_cond);
   }
 #endif /* defined (USE_READER_THREAD */
 _eth_add_to_open_list (dev);
@@ -2864,19 +2874,19 @@ t_stat eth_close(ETH_DEV* dev)
         dev->reader_shutdown((pcap_t *) dev->handle);
     }
 
-    pthread_join (dev->reader_thread, NULL);
+    sim_thread_join (dev->reader_thread, NULL);
 
     if (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
         sim_atomic_put(&dev->writer_state, ETH_THREAD_SHUTDOWN);
 
-	      pthread_mutex_lock(&dev->writer_lock);
-        pthread_cond_broadcast (&dev->writer_cond);
-	      pthread_mutex_unlock(&dev->writer_lock);
+	sim_mutex_lock(&dev->writer_lock);
+        sim_cond_broadcast (&dev->writer_cond);
+	sim_mutex_unlock(&dev->writer_lock);
 
         dev->writer_shutdown((pcap_t *) dev->handle);
     }
 
-    pthread_join (dev->writer_thread, NULL);
+    sim_thread_join (dev->writer_thread, NULL);
 
     sim_tailq_destroy(&dev->read_queue, TRUE);
     sim_tailq_destroy(&dev->read_buffers, TRUE);
@@ -2889,10 +2899,10 @@ t_stat eth_close(ETH_DEV* dev)
 
     /* Then continue to clean up the sync primitives that are no longer
      * needed. */
-    pthread_mutex_destroy (&dev->lock);
-    pthread_mutex_destroy (&dev->self_lock);
-    pthread_mutex_destroy (&dev->writer_lock);
-    pthread_cond_destroy (&dev->writer_cond);
+    sim_mutex_destroy (&dev->lock);
+    sim_mutex_destroy (&dev->self_lock);
+    sim_mutex_destroy (&dev->writer_lock);
+    sim_cond_destroy (&dev->writer_cond);
 #endif
 
     /* close the device */
@@ -3260,12 +3270,12 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
       eth_packet_trace (dev, packet->msg, packet->len, "writing-fixed");
     }
 #ifdef USE_READER_THREAD
-    pthread_mutex_lock (&dev->self_lock);
+    sim_mutex_lock (&dev->self_lock);
 #endif
     dev->loopback_self_sent += dev->reflections;
     dev->loopback_self_sent_total++;
 #ifdef USE_READER_THREAD
-    pthread_mutex_unlock (&dev->self_lock);
+    sim_mutex_unlock (&dev->self_lock);
 #endif
   }
 
@@ -3310,12 +3320,12 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
   /* On error, correct loopback bookkeeping */
   if ((status != 0) && loopback_self_frame) {
 #ifdef USE_READER_THREAD
-    pthread_mutex_lock (&dev->self_lock);
+    sim_mutex_lock (&dev->self_lock);
 #endif
     dev->loopback_self_sent -= dev->reflections;
     dev->loopback_self_sent_total--;
 #ifdef USE_READER_THREAD
-    pthread_mutex_unlock (&dev->self_lock);
+    sim_mutex_unlock (&dev->self_lock);
 #endif
     }
   if (status != 0) {
@@ -3373,9 +3383,9 @@ if (write_queue_size > dev->write_queue_peak)
 /* Awaken writer thread to perform actual write if the queue isn't already
  * empty. No need to awaken the writer. Every. Single. Time. */
 if (write_queue_size == 1) {
-  pthread_mutex_lock(&dev->writer_lock);
-  pthread_cond_signal (&dev->writer_cond);
-  pthread_mutex_unlock(&dev->writer_lock);
+  sim_mutex_lock(&dev->writer_lock);
+  sim_cond_signal (&dev->writer_cond);
+  sim_mutex_unlock(&dev->writer_lock);
 }
 
 /* Return with a status from some prior write */
@@ -3958,7 +3968,7 @@ switch (dev->eth_api) {
 if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) ||
     (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->self_lock);
+  sim_mutex_lock (&dev->self_lock);
 #endif
   dev->loopback_self_rcvd_total++;
   /* lower reflection count - if already zero, pass it on */
@@ -3971,7 +3981,7 @@ if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) ||
     if (!bpf_used)
       from_me = 0;
 #ifdef USE_READER_THREAD
-  pthread_mutex_unlock (&dev->self_lock);
+  sim_mutex_unlock (&dev->self_lock);
 #endif
   }
 
@@ -4385,7 +4395,7 @@ if (dev->dptr->dctrl & dev->dbit) {
     }
   }
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->self_lock);
+  sim_mutex_lock (&dev->self_lock);
 #endif
 /* Set the desired physical address */
 memset(dev->physical_addr, 0, sizeof(ETH_MAC));
@@ -4401,7 +4411,7 @@ for (i = 0; i < addr_count; i++) {
     }
   }
 #ifdef USE_READER_THREAD
-  pthread_mutex_unlock (&dev->self_lock);
+  sim_mutex_unlock (&dev->self_lock);
 #endif
 
 /* setup BPF filters and other fields to minimize packet delivery */

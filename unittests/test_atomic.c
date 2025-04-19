@@ -18,6 +18,8 @@
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #include <malloc.h>
+#else
+#include <unistd.h>
 #endif
 
 #include <unity.h>
@@ -415,6 +417,8 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
                 fflush(stdout);
             }
         } else {
+	    printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
+	    fflush(stdout);
             TEST_FAIL_MESSAGE("reader - residual: Dequeue head, no more elements.");
             break;
         }

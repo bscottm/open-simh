@@ -265,7 +265,7 @@ void *sim_tailq_dequeue_head(sim_tailq_t *p)
     int did_xchg;
 
     do {
-        head = p->head;
+        head = get_head_node(p);
         did_xchg = do_update_head(p, head->next);
     } while (!did_xchg);
 

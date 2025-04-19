@@ -313,16 +313,16 @@ struct eth_device {
   int                 asynch_io;                        /* Asynchronous Interrupt scheduling enabled */
   int                 asynch_io_latency;                /* instructions to delay pending interrupt */
 
-  pthread_mutex_t     lock;
-  pthread_t           reader_thread;                    /* Reader Thread Id */
-  pthread_t           writer_thread;                    /* Writer Thread Id */
-  pthread_mutex_t     writer_lock;
-  pthread_mutex_t     self_lock;
-  pthread_cond_t      writer_cond;
+  sim_mutex_t     lock;                                 /* General-purpose device lock */
+  sim_thread_t    reader_thread;                        /* Reader Thread Id */
+  sim_thread_t    writer_thread;                        /* Writer Thread Id */
+  sim_mutex_t     writer_lock;
+  sim_mutex_t     self_lock;
+  sim_cond_t      writer_cond;
 
   /* Startup transient coordination: */
-  pthread_mutex_t     startup_lock;
-  pthread_cond_t      startup_cond;
+  sim_mutex_t     startup_lock;
+  sim_cond_t      startup_cond;
 
   /* ETH_ITEM tail queue for incoming packets */
   sim_tailq_t         read_queue;

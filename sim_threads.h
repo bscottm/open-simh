@@ -25,6 +25,7 @@
 #  define HAVE_STD_THREADS 1
 #  define THREAD_FUNC_DECL(FUNC) int FUNC(void *arg)
 #  define THREAD_FUNC_DEFN(FUNC) int FUNC(void *arg)
+#  define THREAD_FUNC_RETURN(VAL) ((int) VAL)
 
 typedef int    (*sim_thread_fn)(void *arg);
 typedef int    sim_thread_exit_t;
@@ -37,6 +38,7 @@ typedef mtx_t  sim_mutex_t;
 #  define HAVE_STD_THREADS 0
 #  define THREAD_FUNC_DECL(FUNC) void *FUNC(void *arg)
 #  define THREAD_FUNC_DEFN(FUNC) void *FUNC(void *arg)
+#  define THREAD_FUNC_RETURN(VAL) ((void *) VAL)
 
 typedef void           *(*sim_thread_fn)(void *arg);
 typedef void           *sim_thread_exit_t;
@@ -52,7 +54,33 @@ static SIM_INLINE int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn f
 #if HAVE_STD_THREADS
     return thrd_create(thread_id, func, arg);
 #elif defined(USING_PTHREADS) && USING_PTHREADS
-    return pthread_create(thread_id, NULL, func, arg);
+    pthread_attr_t attr;
+    pthread_t retval;
+
+    pthread_attr_init (&attr);
+    pthread_attr_setscope (&attr, PTHREAD_SCOPE_SYSTEM);
+    retval = pthread_create(thread_id, &attr, func, arg);
+    pthread_attr_destroy( &attr);
+
+    return retval;
+#endif
+}
+
+static SIM_INLINE int sim_thread_equal(sim_thread_t left, sim_thread_t right)
+{
+#if HAVE_STD_THREADS
+    return thrd_equal(left, right);
+#elif defined(USING_PTHREADS) && USING_PTHREADS
+    return pthread_equal(left, right);
+#endif
+}
+
+static SIM_INLINE sim_thread_t sim_thread_self()
+{
+#if HAVE_STD_THREADS
+    return thrd_current();
+#elif defined(USING_PTHREADS) && USING_PTHREADS
+    return pthread_self();
 #endif
 }
 
@@ -92,6 +120,15 @@ static SIM_INLINE int sim_cond_signal(sim_cond_t *cond)
 #endif
 }
 
+static SIM_INLINE int sim_cond_broadcast(sim_cond_t *cond)
+{
+#if HAVE_STD_THREADS
+    return cnd_broadcast(cond);
+#elif defined(USING_PTHREADS) && USING_PTHREADS
+    return pthread_cond_broadcast(cond);
+#endif
+}
+
 static SIM_INLINE int sim_cond_wait(sim_cond_t *cond, sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
@@ -100,6 +137,16 @@ static SIM_INLINE int sim_cond_wait(sim_cond_t *cond, sim_mutex_t *mtx)
     return pthread_cond_wait(cond, mtx);
 #endif
 }
+
+static SIM_INLINE int sim_cond_timedwait(sim_cond_t *cond, sim_mutex_t *mtx, const struct timespec *tmo)
+{
+#if HAVE_STD_THREADS
+    return cnd_timedwait(cond, mtx, tmo);
+#elif defined(USING_PTHREADS) && USING_PTHREADS
+    return pthread_cond_timedwait(cond, mtx, tmo);
+#endif
+}
+
 static SIM_INLINE int sim_mutex_init(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
