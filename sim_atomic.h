@@ -116,14 +116,14 @@
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
 typedef struct {
+    SIM_ATOMIC_TYPE(sim_atomic_type_t) value;
+
 #if NEED_VALUE_MUTEX
     /* If the compiler doesn't support atomic intrinsics, the backup plan is
      * a mutex. */
     int paired;
     sim_mutex_t *value_lock;
 #endif
-
-    SIM_ATOMIC_TYPE(sim_atomic_type_t) value;
 } sim_atomic_value_t;
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -132,30 +132,32 @@ typedef struct {
 
 static SIM_INLINE void sim_atomic_init(sim_atomic_value_t *p)
 {
+    p->value = 0;
+
 #if NEED_VALUE_MUTEX
     p->paired = 0;
     p->value_lock = (sim_mutex_t *) malloc(sizeof(sim_mutex_t));
     sim_mutex_init(p->value_lock);
 #endif
-
-    p->value = 0;
 }
 
 static SIM_INLINE void sim_atomic_paired_init(sim_atomic_value_t *p, sim_mutex_t *mutex)
 {
+p->value = 0;
+
 #if NEED_VALUE_MUTEX
     p->paired = 1;
     p->value_lock = mutex;
 #else
     (void) mutex;
 #endif
-
-p->value = 0;
 }
 
 static SIM_INLINE void sim_atomic_destroy(sim_atomic_value_t *p)
 {
-#if NEED_VALUE_MUTEX
+    p->value = -1;
+
+    #if NEED_VALUE_MUTEX
     if (!p->paired) {
         sim_mutex_destroy(p->value_lock);
         free(p->value_lock);
@@ -164,7 +166,6 @@ static SIM_INLINE void sim_atomic_destroy(sim_atomic_value_t *p)
     p->paired = 0;
     p->value_lock = NULL;
 #endif
-    p->value = -1;
 }
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -176,7 +177,11 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
+#  if ATOMIC_LONG_LOCK_FREE < 2
     retval = p->value;
+#  else
+    retval = atomic_load(&p->value);
+#  endif
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
         __atomic_load(&p->value, &retval, __ATOMIC_ACQUIRE);
@@ -203,7 +208,11 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
 static SIM_INLINE void sim_atomic_put(sim_atomic_value_t *p, sim_atomic_type_t newval)
 {
 #if HAVE_STD_ATOMIC
+#  if ATOMIC_LONG_LOCK_FREE < 2
     p->value = newval;
+#  else
+    atomic_store(&p->value, newval);
+#  endif
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_RELEASE) && (defined(__GNUC__) || defined(__clang__))
     __atomic_store(&p->value, &newval, __ATOMIC_RELEASE);
@@ -229,7 +238,8 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_at
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    retval = (p->value += x);
+    atomic_fetch_add(&p->value, x);
+    retval = sim_atomic_get(p);
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQ_REL)
 #    if (defined(__GNUC__) || defined(__clang__))
@@ -262,8 +272,8 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_at
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    /* Returns the old p->value value. */
-    retval = (p->value -= x);
+    atomic_fetch_sub(&p->value, x);
+    retval = sim_atomic_get(p);
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQ_REL)
 #    if defined(__GNUC__) || defined(__clang__)
@@ -297,7 +307,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_inc(sim_atomic_value_t *p)
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    retval = ++p->value;
+    retval = sim_atomic_add(p, 1);
 #elif HAVE_ATOMIC_PRIMS
 #  if !defined(_WIN32) && !defined(_WIN64)
         retval = sim_atomic_add(p, 1);
@@ -320,7 +330,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    retval = --p->value;
+    retval = sim_atomic_sub(p, 1);
 #elif HAVE_ATOMIC_PRIMS
 #  if !defined(_WIN32) && !defined(_WIN64)
         retval = sim_atomic_sub(p, 1);

@@ -4034,6 +4034,7 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
 
     sim_atomic_type_t queue_count = sim_tailq_count(&dev->read_queue);
 
+#if 0
     if ((queue_count == 1 || dev->asynch_io) && !sim_unit_aio_pending(dev->dptr->units)) {
       /* Kick the simulator's lower half UNIT handler if the read queue's depth is 1 (just received
        * a packet) or an ansynchronous service event is not already scheduled.
@@ -4052,6 +4053,9 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
       sim_debug(dev->dbit, dev->dptr, "Deferred -- pending UNIT service event (depth = %d)\n",
                 queue_count);
       }
+#else
+      sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
+#endif
 
     if (queue_count > dev->read_queue_peak)
         dev->read_queue_peak = queue_count;

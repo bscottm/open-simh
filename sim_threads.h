@@ -2,9 +2,9 @@
 #if !defined(SIM_THREADS_H)
 /*!
  * \file sim_threads.h
- * \brief SIMH thread support wrappers
+ * \brief SIMH thread support
  * 
- * 
+ * This is a thin wrapper around two thread su C11+ concurrency library 
  */
 
 /*!
