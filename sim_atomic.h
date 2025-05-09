@@ -83,8 +83,6 @@
          (defined(__ATOMIC_ACQ_REL) && defined(__ATOMIC_SEQ_CST) && defined(__ATOMIC_ACQUIRE) && \
           defined(__ATOMIC_RELEASE))
        /* Atomic operations available! */
-#      include <stdbool.h>
-
 #      define HAVE_ATOMIC_PRIMS 1
 #    else
 #      define HAVE_ATOMIC_PRIMS 0
@@ -177,11 +175,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-#  if ATOMIC_LONG_LOCK_FREE < 2
-    retval = p->value;
-#  else
     retval = atomic_load(&p->value);
-#  endif
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
         __atomic_load(&p->value, &retval, __ATOMIC_ACQUIRE);
@@ -208,11 +202,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
 static SIM_INLINE void sim_atomic_put(sim_atomic_value_t *p, sim_atomic_type_t newval)
 {
 #if HAVE_STD_ATOMIC
-#  if ATOMIC_LONG_LOCK_FREE < 2
-    p->value = newval;
-#  else
     atomic_store(&p->value, newval);
-#  endif
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_RELEASE) && (defined(__GNUC__) || defined(__clang__))
     __atomic_store(&p->value, &newval, __ATOMIC_RELEASE);
@@ -238,8 +228,8 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_at
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    atomic_fetch_add(&p->value, x);
-    retval = sim_atomic_get(p);
+    /* atomic_fetch_add returns the old p->value value. */
+    retval = atomic_fetch_add(&p->value, x) + x;
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQ_REL)
 #    if (defined(__GNUC__) || defined(__clang__))
@@ -272,8 +262,8 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_at
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    atomic_fetch_sub(&p->value, x);
-    retval = sim_atomic_get(p);
+    /* atomic_fetch_sub returns the old p->value value. */
+    retval = atomic_fetch_sub(&p->value, x) - x;
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQ_REL)
 #    if defined(__GNUC__) || defined(__clang__)
@@ -330,7 +320,7 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
     sim_atomic_type_t retval;
 
 #if HAVE_STD_ATOMIC
-    retval = sim_atomic_sub(p, 1);
+       retval = sim_atomic_sub(p, 1);
 #elif HAVE_ATOMIC_PRIMS
 #  if !defined(_WIN32) && !defined(_WIN64)
         retval = sim_atomic_sub(p, 1);
@@ -346,159 +336,6 @@ static SIM_INLINE sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
 #endif
 
     return retval;
-}
-
-
-/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
- * sim_tailq_t: Lock-free (mostly) tail queue, where inserting elements at the head of the queue and appending elements
- * at the tail are atomically compared/exchanged.
- *
- * Lock-free (mostly): As with atomic variables above, use (in order of precedence and availability):
- *  -- C11 and newer standard atomic operations
- *  -- Compiler intrinsics (GCC, Clang and MSVC)
- *  -- Mutex guard as a last resort
- *
- * The queue's tail always points to the next insertion point, so appending to the queue is O(1).
- *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
-
-/* List element type: */
-typedef struct sim_tailq_elem_s {
-    /* Generic element pointer. */
-    void *elem;
-    /* Next element in the tail queue. */
-    SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
-} sim_tailq_elem_t;
-
-typedef SIM_ATOMIC_TYPE(sim_tailq_elem_t *) sim_tailq_head_t;
-typedef SIM_ATOMIC_TYPE(sim_tailq_head_t *) sim_tailq_tail_t;
-
-/* The list type, itself. */
-typedef struct sim_tailq_s {
-    /* List head, first element. */
-    sim_tailq_head_t head;
-    /* List tail, next insertion point. */
-    sim_tailq_tail_t tail;
-    /* Element counter. */
-    sim_atomic_value_t n_elements;
-
-#if NEED_VALUE_MUTEX
-    /* If the compiler doesn't support atomic intrinsics, the backup plan is
-     * a mutex. */
-    int paired;
-    sim_mutex_t *lock;
-#endif
-} sim_tailq_t;
-
-/* Initialize a tail queue. */
-void sim_tailq_init(sim_tailq_t *p);
-/* Initialize a tail queue, paired with a mutex. */
-void sim_tailq_paired_init(sim_tailq_t *p, sim_mutex_t *mutex);
-/* Clean up the queue and deallocate the queue's sim_tailq_elem_t elements.
- *
- * Optionally, if free_elems != 0, free the sim_tailq_elem_t's elem as well.
- */
-void sim_tailq_destroy(sim_tailq_t *p, int free_elems);
-
-/* Insert at the head of the tail queue. */
-sim_tailq_t *sim_tailq_insert_head(sim_tailq_t *p, void *elem);
-/* Append to the tail of the tail queue. Returns the */
-sim_tailq_t *sim_tailq_append(sim_tailq_t *p, void *elem);
-/* Take the tail queue from a source queue, placing it in the destination queue. The
- * source queue is reinitialized to empty. */
-sim_tailq_t *sim_tailq_take(sim_tailq_t *src, sim_tailq_t *dst);
-/* Splice one tail queue onto the end of another. The 'onto' tail queue has the
- * 'onto' and 'from' combined contents. The 'from' tail queue is emptied. */
-sim_tailq_t *sim_tailq_splice(sim_tailq_t *onto, sim_tailq_t *from);
-/* Take and dequeue the head of the list, returning the element. */
-void *sim_tailq_dequeue_head(sim_tailq_t *p);
-
-
-/*!
- * Element acccessor function.
- *
- * \param node A tail queue node
- * \return node->elem
- */
-static SIM_INLINE void *sim_tailq_element(const sim_tailq_elem_t *node)
-{
-    return node->elem;
-}
-
-/*!
- * Iterator pointer to the tail queue's head. The access to the head element node is atomic.
- *
- * \param p The tail queue
- * \return A pointer to the first tail queue list element.
- */
-static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_head(const sim_tailq_t *p)
-{
-#if HAVE_STD_ATOMIC
-    return atomic_load(&p->head);
-#elif HAVE_ATOMIC_PRIMS
-#  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
-    sim_tailq_elem_t *retval;
-    __atomic_load(&p->head, &retval, __ATOMIC_ACQUIRE);
-    return retval;
-#  elif defined(_WIN32) || defined(_WIN64)
-#    if defined(_M_IX86) || defined(_M_X64)
-        /* Intel Total Store Ordering optimization. */
-        return p->head;
-#    else
-        return InterlockedExchangePointer(&p->head, p->head);
-#    endif
-#  else
-#    error "sim_atomic_get: No intrinsic?"
-#  endif
-#else
-    sim_tailq_elem_t *retval;
-
-    sim_mutex_lock(p->lock);
-    retval = p->head;
-    sim_mutex_unlock(p->lock);
-
-    return retval;
-#endif
-}
-
-/* Iterator pointer to the next element. */
-static SIM_INLINE sim_tailq_elem_t *sim_tailq_iter_next(const sim_tailq_elem_t *p)
-{
-#if HAVE_STD_ATOMIC
-    return p->next;
-#elif HAVE_ATOMIC_PRIMS
-#  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
-    sim_tailq_elem_t *retval;
-    __atomic_load(&p->next, &retval, __ATOMIC_ACQUIRE);
-    return retval;
-#  elif defined(_WIN32) || defined(_WIN64)
-#    if defined(_M_IX86) || defined(_M_X64)
-    /* Intel Total Store Ordering optimization. */
-    return p->next;
-#    else
-    return InterlockedExchangePointer(&p->next, p->next);
-#    endif
-#  else
-#    error "sim_atomic_get: No intrinsic?"
-#  endif
-#else /* NEED_VALUE_LOCK */
-    return p->next;
-#endif
-}
-
-/* Get the current element count: */
-static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *p)
-{
-    return sim_atomic_get(&p->n_elements);
-}
-
-/*!
- * Test for empty tail queue.
- *
- * \return 0 if not empty, otherwise 1.
- */
-static SIM_INLINE int sim_tailq_empty(const sim_tailq_t * const p)
-{
-    return (p->head == NULL);
 }
 
 #define SIM_ATOMIC_H

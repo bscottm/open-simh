@@ -140,6 +140,7 @@ extern int sim_vax_snprintf(char *buf, size_t buf_size, const char *fmt, ...);
 #include <math.h>
 #include <setjmp.h>
 
+#include "support/sim_bool.h"
 
 #ifndef EXIT_FAILURE
 #define EXIT_FAILURE 1
@@ -198,12 +199,6 @@ extern "C" {
 #undef PAGESIZE
 #endif
 
-
-#ifndef TRUE
-#define TRUE            1
-#define FALSE           0
-#endif
-
 /* SCP API shim.
 
    The SCP API for version 4.0 introduces a number of "pointer-to-const"
@@ -241,7 +236,6 @@ typedef uint32_t        uint32;
 #endif                                                  /* end standard integers */
 
 typedef int             t_stat;                         /* status */
-typedef int             t_bool;                         /* boolean */
 
 /* 64b integers */
 

@@ -1,0 +1,184 @@
+/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+ * sim_tailq_t: Lock-free (mostly) tail queue, where inserting elements at the head of the queue and appending elements
+ * at the tail are atomically compared/exchanged.
+ *
+ * Lock-free (mostly): As with atomic variables above, use (in order of precedence and availability):
+ *  -- C11 and newer standard atomic operations
+ *  -- Compiler intrinsics (GCC, Clang and MSVC)
+ *  -- Mutex guard as a last resort
+ *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+
+#if !defined(SIM_TAILQ_H)
+
+#include "support/sim_bool.h"
+#include "sim_atomic.h"
+
+/*!
+ * Tail queue list element type.
+ */
+typedef struct sim_tailq_elem_s {
+    /*! Generic element pointer. */
+    void *elem;
+    /*! Next element in the tail queue. */
+    SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
+} sim_tailq_elem_t;
+
+/*! List pointer type. */
+typedef SIM_ATOMIC_TYPE(sim_tailq_elem_t *) sim_tailq_list_t;
+
+/* The list type, itself. */
+typedef struct sim_tailq_s {
+    /*! List head, first element. */
+    SIM_ATOMIC_TYPE(sim_tailq_elem_t *) head;
+    /*! List tail, next insertion point. */
+    SIM_ATOMIC_TYPE(sim_tailq_elem_t *) tail;
+    /*! Current active element count. */
+    sim_atomic_value_t n_elements;
+
+    /*!
+     * \brief Paired mutex flag.
+     *
+     * This flag indicates whether the mutex is paired with an external mutex,
+     * supplied during initialization.
+     * 
+     * 0: Not paired
+     * 1: Paired.
+     */
+    int paired;
+#if NEED_VALUE_MUTEX
+    /*!
+     * \brief Modification mutex
+     *
+     * This mutex is acquired when lock-free or atomic variable support is
+     * unavailable, or when modifying the internal allocation state of the tail
+     * queue.
+     */
+    sim_mutex_t *lock;
+#endif
+} sim_tailq_t;
+
+
+/*!
+ * \brief Initialize an atomic tail queue.
+ *
+ * Bulk allocates an initial tail queue list, makes the list circular, sets the head, tail and
+ * last element pointers.
+ * 
+ * \param tailq The tail queue to be initialized.
+ * \return 0 on error, otherwise 1.
+ */
+int sim_tailq_init(sim_tailq_t *tailq);
+
+/*!
+ * \brief Initialize an atomic tail queue paired with a mutex.
+ *
+ * 
+ * 
+ * \param tailq
+ * \param mutex 
+ */
+int sim_tailq_paired_init(sim_tailq_t *tailq, sim_mutex_t *mutex);
+
+/* Clean up the queue and deallocate the queue's sim_tailq_elem_t elements.
+ *
+ * Optionally, if free_elems != 0, free the sim_tailq_elem_t's elem as well.
+ */
+void sim_tailq_destroy(sim_tailq_t *p, int free_elems);
+
+/* Append to the tail of the tail queue. Returns the */
+sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *elem);
+/* Take and dequeue the head of the list, returning the element. */
+void *sim_tailq_dequeue(sim_tailq_t *p);
+
+
+/*!
+ * Element acccessor function.
+ *
+ * \param node A tail queue node
+ * \return node->elem
+ */
+static SIM_INLINE void *sim_tailq_element(const sim_tailq_elem_t *node)
+{
+    return node->elem;
+}
+
+static SIM_INLINE sim_tailq_elem_t *get_tailq_pointer(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) const *ptr)
+{
+    sim_tailq_elem_t *retval;
+
+#if HAVE_STD_ATOMIC
+    retval = atomic_load(ptr);
+#elif HAVE_ATOMIC_PRIMS
+#  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
+        __atomic_load(ptr , &retval, __ATOMIC_ACQUIRE);
+#  elif defined(_WIN32) || defined(_WIN64)
+#    if defined(_M_IX86) || defined(_M_X64)
+        /* Intel Total Store Ordering optimization. */
+        retval = *ptr;
+#    else
+        retval = InterlockedExchangePointer(ptr, *ptr);
+#    endif
+#  else
+#    error "sim_tailq_head_get: No intrinsic?"
+        retval = -1;
+#  endif
+#else
+    sim_mutex_lock(tailq->lock);
+    retval = *ptr;
+    sim_mutex_unlock(tailq->lock);
+#endif
+
+    return retval;
+}
+
+/*!
+ * Iterator pointer to the tail queue's head. The access to the head element node is atomic.
+ *
+ * \param p The tail queue
+ * \return A pointer to the first tail queue list element.
+ */
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_head(const sim_tailq_t *p)
+{
+    return get_tailq_pointer(&p->head);
+}
+
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_tail(const sim_tailq_t *p)
+{
+    return get_tailq_pointer(&p->tail);
+}
+
+/* Iterator pointer to the next element. */
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_next(const sim_tailq_elem_t *p)
+{
+    return get_tailq_pointer(&p->next);
+}
+
+/*!
+ * Iterator pointer to the tail queue's head. The access to the head element node is atomic.
+ *
+ * \param p The tail queue
+ * \return A pointer to the first tail queue list element.
+ */
+static SIM_INLINE t_bool sim_tailq_at_tail(const sim_tailq_elem_t *p, const sim_tailq_t *tailq)
+{
+    return (get_tailq_pointer(&tailq->tail) == p);
+}
+
+/* Get the current element count: */
+static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *p)
+{
+    return sim_atomic_get(&p->n_elements);
+}
+
+/*!
+ * Test for empty tail queue.
+ *
+ * \return 0 if not empty, otherwise 1.
+ */
+static SIM_INLINE int sim_tailq_empty(const sim_tailq_t * const p)
+{
+    return (get_tailq_pointer(&p->head) == get_tailq_pointer(&p->tail));
+}
+
+#define SIM_TAILQ_H
+#endif

@@ -37,12 +37,12 @@ if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThread
 
     add_executable(test_atomic
         test_atomic.c
-        ${CMAKE_SOURCE_DIR}/sim_atomic.c
+        ${CMAKE_SOURCE_DIR}/sim_tailq.c
     )
 
     add_executable(test_atomic_mtx
         test_atomic.c
-        ${CMAKE_SOURCE_DIR}/sim_atomic.c
+        ${CMAKE_SOURCE_DIR}/sim_tailq.c
     )
 
     target_compile_definitions(
@@ -57,7 +57,7 @@ if (WITH_ASYNC AND (C11_CONCURRENCY_LIB OR THREADS_FOUND OR PTW_FOUND OR PThread
 
         add_executable(test_atomic_nostd
             test_atomic.c
-            ${CMAKE_SOURCE_DIR}/sim_atomic.c
+            ${CMAKE_SOURCE_DIR}/sim_tailq.c
         )
 
         target_compile_definitions(

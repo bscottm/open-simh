@@ -24,7 +24,6 @@ add_custom_target(update_sim_commit ALL
 ## Simulator sources and library:
 set(SIM_SOURCES
     ${CMAKE_SOURCE_DIR}/scp.c
-    ${CMAKE_SOURCE_DIR}/sim_atomic.c
     ${CMAKE_SOURCE_DIR}/sim_card.c
     ${CMAKE_SOURCE_DIR}/sim_console.c
     ${CMAKE_SOURCE_DIR}/sim_debtab.c
@@ -35,6 +34,7 @@ set(SIM_SOURCES
     ${CMAKE_SOURCE_DIR}/sim_scsi.c
     ${CMAKE_SOURCE_DIR}/sim_serial.c
     ${CMAKE_SOURCE_DIR}/sim_sock.c
+    ${CMAKE_SOURCE_DIR}/sim_tailq.c
     ${CMAKE_SOURCE_DIR}/sim_tape.c
     ${CMAKE_SOURCE_DIR}/sim_timer.c
     ${CMAKE_SOURCE_DIR}/sim_tmxr.c

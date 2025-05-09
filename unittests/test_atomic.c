@@ -23,17 +23,16 @@
 #endif
 
 #include <unity.h>
-#include "sim_atomic.h"
+#include "sim_tailq.h"
 #include "sim_threads.h"
 
 /* Forward decl's for the tests. */
 void os_check_malloc();
-void test_insert_head_tail(void);
-void test_mixed_inserts(void);
-void test_tailq_take_splice(void);
+void test_tailq_enqueue(void);
+void test_tailq_dequeue(void);
 void test_thread_head_tail(void);
 
-static inline uint32_t sim_tailq_actual(sim_tailq_t *tailq);
+static inline uint32_t sim_tailq_actual(const sim_tailq_t *tailq);
 
 /* And Win32 compatibility functions: */
 #if defined(WIN_NANOSLEEP) && WIN_NANOSLEEP
@@ -76,7 +75,7 @@ uint32_t rand_int_range (rand_state_t rand, int begin, int end);
 /* Test data: */
 #define array_size(arr) (sizeof(arr) / sizeof(arr[0]))
 
-int init_values[] = {  1,  2,  3,  4,  5,  6,  7,  8,  9, 10 };
+int init_values[] = {  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 21, 32, 43, 54, 65, 76, 87, 98, 47, 22 };
 int tail_values[] = { 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 };
 int xtra_values[] = { 31, 32, 33, 34 };
 int deep_values[] = { 49, 48, 47 };
@@ -115,9 +114,8 @@ int main(void)
 #endif
 
     /* Basic functionality tests: */
-    RUN_TEST(test_insert_head_tail);
-    RUN_TEST(test_mixed_inserts);
-    RUN_TEST(test_tailq_take_splice);
+    RUN_TEST(test_tailq_enqueue);
+    RUN_TEST(test_tailq_dequeue);
 
     /* Threaded testing: */
     RUN_TEST(test_thread_head_tail);
@@ -136,117 +134,48 @@ void os_check_malloc()
 #endif
 }
 
-void test_insert_head_tail(void)
+void test_tailq_enqueue()
 {
-    sim_tailq_t l;
+    sim_tailq_t tailq;
     sim_tailq_elem_t const *p;
     size_t i, j;
 
-    /* Head inserts: */
-    sim_tailq_init(&l);
-    for (i = array_size(init_values); i > 0; /* empty */)
-        sim_tailq_insert_head(&l, init_values + --i);
+    sim_tailq_init(&tailq);
 
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
+    for (i = 0; i < array_size(init_values); ++i)
+        sim_tailq_enqueue(&tailq, init_values + i);
+
+    for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p), i++, j++) {
         TEST_ASSERT_FALSE(j >= array_size(init_values));
         TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_element(p)));
     }
 
-    TEST_ASSERT_EQUAL(sim_tailq_count(&l), array_size(init_values));
+    TEST_ASSERT_EQUAL(sim_tailq_count(&tailq), array_size(init_values));
 
-    /* Tail appends: */
-    for (i = 0; i < array_size(tail_values); ++i)
-        sim_tailq_append(&l, tail_values + i);
-
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
-        TEST_ASSERT_FALSE(j >= array_size(expected_1));
-        TEST_ASSERT_EQUAL(expected_1[j], *((int *) sim_tailq_element(p)));
-    }
-
-    TEST_ASSERT_EQUAL(sim_tailq_count(&l), array_size(init_values) + array_size(tail_values));
-
-    sim_tailq_destroy(&l, 0);
+    sim_tailq_destroy(&tailq, 0);
     os_check_malloc();
 }
 
-void test_mixed_inserts(void)
+void test_tailq_dequeue(void)
 {
-    sim_tailq_t l;
-    sim_tailq_elem_t const *p;
-    size_t i, j;
+    sim_tailq_t tailq;
+    void *thing;
+    size_t i;
 
-    sim_tailq_init(&l);
+    sim_tailq_init(&tailq);
 
-    /* Append a bunch of values: */
+    /* Enqueue a bunch of values: */
     for (i = 0; i < array_size(init_values); ++i)
-        sim_tailq_append(&l, init_values + i);
+        sim_tailq_enqueue(&tailq, init_values + i);
 
-    /* Then insert at the head. */
-    for (i = array_size(tail_values); i > 0; /* empty */)
-        sim_tailq_insert_head(&l, tail_values + --i);
-
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
-        TEST_ASSERT_FALSE(j >= array_size(expected_2));
-        TEST_ASSERT_EQUAL_INT(expected_2[j], *((int *) sim_tailq_element(p)));
+    for (i = 0, thing = sim_tailq_dequeue(&tailq); thing != NULL; thing = sim_tailq_dequeue(&tailq), i++) {
+        TEST_ASSERT_FALSE(i >= array_size(init_values));
+        TEST_ASSERT_EQUAL_INT(init_values[i], *((int *) thing));
     }
 
-    TEST_ASSERT_EQUAL(sim_tailq_count(&l), array_size(expected_2));
+    TEST_ASSERT_EQUAL(0, sim_tailq_count(&tailq));
 
-    sim_tailq_destroy(&l, 0);
-    os_check_malloc();
-}
-
-void test_tailq_take_splice(void)
-{
-    sim_tailq_t l, l2;
-    sim_tailq_elem_t const *p;
-    size_t i, j;
-
-    sim_tailq_init(&l);
-    sim_tailq_init(&l2);
-
-    for (i = 0; i < array_size(tail_values); ++i)
-        sim_tailq_append(&l, tail_values + i);
-
-    TEST_ASSERT_EQUAL_MESSAGE(sim_tailq_take(&l, &l2), &l2, "sim_tailq_take did not return &l2");
-    TEST_ASSERT_EQUAL_MESSAGE(l.head, NULL, "sim_tailq_take: l.head not NULL");
-    TEST_ASSERT_EQUAL_MESSAGE(l.tail, &l.head, "sim_tailq_take: l.tail does not point to l.head");
-    TEST_ASSERT_EQUAL(sim_tailq_count(&l2), array_size(tail_values));
-    TEST_ASSERT_EQUAL(sim_tailq_count(&l), 0);
-
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l2); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
-        TEST_ASSERT_FALSE(j >= array_size(tail_values));
-        TEST_ASSERT_EQUAL_INT(tail_values[j], *((int *) sim_tailq_element(p)));
-    }
-
-    os_check_malloc();
-
-    for (i = 0; i < array_size(init_values); ++i)
-        sim_tailq_append(&l, init_values + i);
-
-    TEST_ASSERT_EQUAL_MESSAGE(sim_tailq_splice(&l, &l2), &l, "sim_tailq_splice did not return &l");
-    TEST_ASSERT_EQUAL_MESSAGE(l2.head, NULL, "sim_tailq_splice: l2.head not NULL");
-    TEST_ASSERT_EQUAL_MESSAGE(l2.tail, &l2.head, "sim_tailq_splice: l2.tail does not point to l2.head");
-
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
-        TEST_ASSERT_FALSE(j >= array_size(expected_1));
-        TEST_ASSERT_EQUAL_INT(expected_1[j], *((int *) sim_tailq_element(p)));
-    }
-
-    for (i = 0; i < array_size(xtra_values); ++i)
-        sim_tailq_append(&l, &xtra_values[i]);
-
-    for (i = 1, j = 0, p = sim_tailq_iter_head(&l); p != NULL; p = sim_tailq_iter_next(p), i++, j++) {
-        TEST_ASSERT_FALSE(j >= array_size(expected_3));
-        TEST_ASSERT_EQUAL_INT(expected_3[j], *((int *) sim_tailq_element(p)));
-    }
-
-    TEST_ASSERT_EQUAL_MESSAGE(l2.head, NULL, "sim_tailq_splice (2): l2.head not NULL");
-    TEST_ASSERT_EQUAL_MESSAGE(l2.tail, &l2.head, "sim_tailq_splice (2): l2.tail does not point to l2.head");
-
-    sim_tailq_destroy(&l, 0);
-    sim_tailq_destroy(&l2, 0);
-
+    sim_tailq_destroy(&tailq, 0);
     os_check_malloc();
 }
 
@@ -271,6 +200,7 @@ typedef struct {
     sim_tailq_t *tailq;         /*!< The tail queue being operated upon. */
     sim_atomic_value_t state;   /*!< The reader thread's state. */
     rand_state_t prng;          /*!< Pseudo-random number generator state. */
+    struct timespec *delay;     /*!< Reader delay */
 
     sim_cond_t empty_queue_cond;
     sim_mutex_t empty_queue_mtx;
@@ -282,14 +212,30 @@ static const int reader_iter_limit = 10244;
 static int reader_test_elem = 0x0abc1234;
 
 THREAD_FUNC_DECL(dequeue_head_reader);
+void enqueue_tail_writer(struct timespec *wr_delay, struct timespec *rd_delay);
 
 void test_thread_head_tail(void)
+{
+    struct timespec delay100us = {
+        .tv_sec = 0,
+        .tv_nsec = (long) (200ll * NSEC_PER_USEC)
+    };
+    struct timespec null_delay = {
+        .tv_sec = 0,
+        .tv_nsec = 0
+    };
+
+    enqueue_tail_writer(&null_delay, &null_delay);
+}
+
+void enqueue_tail_writer(struct timespec *wr_delay, struct timespec *rd_delay)
 {
     sim_tailq_t tailq;
     rand_state_t prng;
 
     head_tail_startup_t info = {
-        .tailq = &tailq
+        .tailq = &tailq,
+        .delay = rd_delay
     };
 
     sim_tailq_init(info.tailq);
@@ -312,21 +258,17 @@ void test_thread_head_tail(void)
     TEST_ASSERT_EQUAL(sim_atomic_get(&info.state), READER_RUNNING);
 
     int i;
-    struct timespec delay100us = {
-        .tv_sec = 0,
-        .tv_nsec = (long) (200ll * NSEC_PER_USEC)
-    };
 
     for (i = 0; i < reader_iter_limit; /* empty */) {
         uint32_t burst = rand_int_range(prng, 1, 16);
 
         while (burst > 0) {
             if ((i % 1000) == 0) {
-                printf("%5d writer (%" PRIsim_atomic ", %d)...\n", i, sim_tailq_count(&tailq), sim_tailq_actual(&tailq));
+                printf("%5d writer (%" PRIsim_atomic ", %u)...\n", i, sim_tailq_count(&tailq), sim_tailq_actual(&tailq));
                 fflush(stdout);
             }
 
-            sim_tailq_append(&tailq, &reader_test_elem);
+            sim_tailq_enqueue(&tailq, &reader_test_elem);
             --burst;
             ++i;
         }
@@ -337,7 +279,8 @@ void test_thread_head_tail(void)
             sim_mutex_unlock(&info.empty_queue_mtx);
         }
 
-        nanosleep(&delay100us, NULL);
+        if (wr_delay->tv_sec > 0 || wr_delay->tv_nsec > 0)
+            nanosleep(wr_delay, NULL);
     }
 
     printf("%5d writer done.\n", i);
@@ -352,8 +295,8 @@ void test_thread_head_tail(void)
     sim_thread_join(reader, &reader_exitval);
 
     TEST_ASSERT_EQUAL(READER_EXITED, sim_atomic_get(&info.state));
-    TEST_ASSERT_EQUAL(0, sim_tailq_count(&tailq));
-    TEST_ASSERT_TRUE(sim_tailq_empty(&tailq));
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim_tailq_count(&tailq), "tailq count != 0");
+    TEST_ASSERT_TRUE_MESSAGE(sim_tailq_empty(&tailq), "tailq not empty.");
 
     sim_cond_destroy(&info.startup_cond);
     sim_mutex_destroy(&info.startup_mtx);
@@ -365,8 +308,9 @@ void test_thread_head_tail(void)
 
 THREAD_FUNC_DEFN(dequeue_head_reader)
 {
+    const int burst_max = 11;
     head_tail_startup_t *info = (head_tail_startup_t *) arg;
-    uint32_t burst = rand_int_range(info->prng, 1, 11);
+    uint32_t burst = rand_int_range(info->prng, 1, burst_max);
     int iter = 0;
 
     sim_atomic_put(&info->state, READER_RUNNING);
@@ -376,14 +320,14 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
     sim_mutex_unlock(&info->startup_mtx);
 
     while (sim_atomic_get(&info->state) == READER_RUNNING) {
-        int *item = (int *) sim_tailq_dequeue_head(info->tailq);
-        
+        int *item = (int *) sim_tailq_dequeue(info->tailq);
+
         if (item == NULL) {
             sim_mutex_lock(&info->empty_queue_mtx);
             sim_cond_wait(&info->empty_queue_cond, &info->empty_queue_mtx);
             sim_mutex_unlock(&info->empty_queue_mtx);
 
-            burst = rand_int_range(info->prng, 1, 11);
+            burst = rand_int_range(info->prng, 1, burst_max);
         } else {
             TEST_ASSERT_EQUAL(reader_test_elem, *item);
 
@@ -392,18 +336,10 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
                 fflush(stdout);
             }
 
-            long long delay_nsecs = (15 * rand_int_range(info->prng, 1, 7)) * NSEC_PER_USEC;
-
-            TEST_ASSERT(delay_nsecs < LONG_MAX);
-
             if (--burst == 0) {
-                struct timespec read_delay = {
-                    .tv_sec = 0,
-                    .tv_nsec = (long) delay_nsecs
-                };
-            
-                nanosleep(&read_delay, NULL);
-                burst = rand_int_range(info->prng, 1, 11);
+                if (info->delay->tv_sec > 0 || info->delay->tv_nsec > 0)
+                    nanosleep(info->delay, NULL);
+                burst = rand_int_range(info->prng, 1, burst_max);
             }
 
             ++iter;
@@ -411,7 +347,7 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
     }
 
     while (sim_tailq_count(info->tailq) > 0) {
-        if (sim_tailq_dequeue_head(info->tailq) != NULL) {
+        if (sim_tailq_dequeue(info->tailq) != NULL) {
             if ((++iter % 1000) == 0) {
                 printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
                 fflush(stdout);
@@ -423,7 +359,7 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
             break;
         }
     }
-  
+
     printf("%5d reader (%" PRIsim_atomic ", %u)...\n", iter, sim_tailq_count(info->tailq), sim_tailq_actual(info->tailq));
     fflush(stdout);
 
@@ -432,12 +368,12 @@ THREAD_FUNC_DEFN(dequeue_head_reader)
     return 0;
 }
 
-static inline uint32_t sim_tailq_actual(sim_tailq_t *tailq)
+uint32_t sim_tailq_actual(const sim_tailq_t *tailq)
 {
     uint32_t queue_count = 0;
-    sim_tailq_elem_t *p;
-    
-    for (p = sim_tailq_iter_head(tailq); p != NULL; p = sim_tailq_iter_next(p))
+    const sim_tailq_elem_t *p;
+
+    for (p = sim_tailq_head(tailq); !sim_tailq_at_tail(p, tailq); p = sim_tailq_next(p))
       ++queue_count;
 
     return queue_count;
