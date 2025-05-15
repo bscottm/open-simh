@@ -372,7 +372,7 @@
 #include <ctype.h>
 #include "sim_ether.h"
 #include "scp.h"
-#include "sim_atomic.h"
+#include "sim_tailq.h"
 #include "sim_sock.h"
 #include "sim_timer.h"
 #if defined(_WIN32)
@@ -2141,43 +2141,47 @@ _eth_callback((u_char *)opaque, &header, buf);
         SIM_UNUSED_ARG(opaque);
     }
 
-    void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
+    static sim_tailq_elem_t *queue_reader_buffer(sim_tailq_elem_t *exist_elem, void *item_arg)
     {
-      ETH_ITEM *item;
-    
-      /* Get an item buffer */
-      if ((item = sim_tailq_dequeue_head(&dev->read_buffers)) == NULL) {
+      ETH_ITEM *item = (ETH_ITEM *) exist_elem->elem;
+      ETH_ITEM *replace = (ETH_ITEM *) item_arg;
+
+      if (item == NULL) {
           item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
-          if (item == NULL) {
+          if (item != NULL) {
+            exist_elem->elem = item;
+          } else {
               sim_messagef(SCPE_MEM, "reader_enqueue_data(): calloc() failed.\n");
-              return;
           }
       }
+
+      memcpy(item, replace, sizeof(ETH_ITEM));
+      return exist_elem;
+    }
+
+    void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
+    {
+      ETH_ITEM item;
     
-      if (item == NULL) {
-        sim_messagef(SCPE_MEM, "reader_enqueue_data(): Packet discarded.\n");
-        return;
-      }
-      
       /* set information in (new) tail item */
-      item->type = type;
-      item->packet.len = len;
-      item->packet.used = used;
-      item->packet.crc_len = crc_len;
-      if (MAX (len, crc_len) <= sizeof (item->packet.msg)) {
-        memcpy(item->packet.msg, data, ((len > crc_len) ? len : crc_len));
+      item.type = type;
+      item.packet.len = len;
+      item.packet.used = used;
+      item.packet.crc_len = crc_len;
+      if (MAX (len, crc_len) <= sizeof (item.packet.msg)) {
+        memcpy(item.packet.msg, data, ((len > crc_len) ? len : crc_len));
         if (crc_data && (crc_len > len))
-          memcpy(&item->packet.msg[len], crc_data, ETH_CRC_SIZE);
+          memcpy(&item.packet.msg[len], crc_data, ETH_CRC_SIZE);
         }
       else {
-        item->packet.oversize = (uint8 *)realloc (item->packet.oversize, ((len > crc_len) ? len : crc_len));
-        memcpy(item->packet.oversize, data, ((len > crc_len) ? len : crc_len));
+        item.packet.oversize = (uint8 *)realloc (item.packet.oversize, ((len > crc_len) ? len : crc_len));
+        memcpy(item.packet.oversize, data, ((len > crc_len) ? len : crc_len));
         if (crc_data && (crc_len > len))
-          memcpy(&item->packet.oversize[len], crc_data, ETH_CRC_SIZE);
+          memcpy(&item.packet.oversize[len], crc_data, ETH_CRC_SIZE);
         }
-      item->packet.status = status;
+      item.packet.status = status;
     
-      sim_tailq_append(&dev->read_queue, item);
+      sim_tailq_enqueue_xform(&dev->read_queue, queue_reader_buffer, &item);
     }
     
     void reader_enqueue(ETH_DEV *dev, int32 type, ETH_PACK* pack, int32 status)
@@ -2247,6 +2251,7 @@ _eth_callback((u_char *)opaque, &header, buf);
         sim_mutex_unlock(&dev->startup_lock);
 
         while (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
+            work_unit = sim_tailq_dequeue(&dev->write_requests);
             if (work_unit != NULL) {
                 /* Process the queued packets as an ensemble. */
                 if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
@@ -2265,38 +2270,22 @@ _eth_callback((u_char *)opaque, &header, buf);
                 ETH_WRITE_REQUEST *write_req = (ETH_WRITE_REQUEST *) sim_tailq_element(work_unit);
                 
                 sim_atomic_put(&dev->write_status, _eth_write(dev, &write_req->packet, NULL));
-
-                work_unit = sim_tailq_iter_next(work_unit);
-                if (work_unit == NULL) {
-                    /* Last work unit in the current request tail queue. Put the buffers
-                     * back on the device's buffer list. */
-                    sim_tailq_splice(&dev->write_buffers, &request);
-                }
             } else {
-                /* Look for work to do. Requests may have been queued while we worked off the
-                 * work_units. Note: Grabbing the count is a lot less expensive than taking
-                 * the queue from dev->write_requests (compare/exchange is expensive.) */
-                if (sim_tailq_count(&dev->write_requests) == 0) {
-                    /* Nothin'. Wait until the simulator tells us that we have work to do. */
-                    struct timespec cond_until;
+                struct timespec cond_until;
 
-                    /* Don't wait indefinitely, just in case we see |write_requests| === 0, but the main
-                     * thread's |write_requests| >= 1 and it already sent the condition signal, but we
-                     * never had the chance to wait. */
-                    clock_gettime(CLOCK_REALTIME, &cond_until);
-                    cond_until.tv_nsec += (50 * 1000000 /* nsec/msec*/);
-                    if (cond_until.tv_nsec >= 1000000000) {
-                        cond_until.tv_sec += cond_until.tv_nsec / 1000000000;
-                        cond_until.tv_nsec = cond_until.tv_nsec % 1000000000;
-                    }
-                      
-                    sim_mutex_lock (&dev->writer_lock);
-                    sim_cond_timedwait (&dev->writer_cond, &dev->writer_lock, &cond_until);
-                    sim_mutex_unlock (&dev->writer_lock);
-                } else {
-                    sim_tailq_take(&dev->write_requests, &request);
-                    work_unit = sim_tailq_iter_head(&request);
+                /* Don't wait indefinitely, just in case we see |write_requests| === 0, but the main
+                 * thread's |write_requests| >= 1 and it already sent the condition signal, but we
+                 * never had the chance to wait. */
+                clock_gettime(CLOCK_REALTIME, &cond_until);
+                cond_until.tv_nsec += (50 * 1000000 /* nsec/msec*/);
+                if (cond_until.tv_nsec >= 1000000000) {
+                    cond_until.tv_sec += cond_until.tv_nsec / 1000000000;
+                    cond_until.tv_nsec = cond_until.tv_nsec % 1000000000;
                 }
+                      
+                sim_mutex_lock (&dev->writer_lock);
+                sim_cond_timedwait (&dev->writer_cond, &dev->writer_lock, &cond_until);
+                sim_mutex_unlock (&dev->writer_lock);
             }
         }
 
@@ -2773,11 +2762,9 @@ if (1) {
   sim_atomic_put(&dev->writer_state, ETH_THREAD_IDLE);
 
   sim_tailq_init(&dev->read_queue);
-  sim_tailq_init(&dev->read_buffers);
   dev->read_queue_peak = 0;
 
   sim_tailq_init(&dev->write_requests);
-  sim_tailq_init(&dev->write_buffers);
   dev->write_queue_peak = 0;
 
 #if defined(__hpux) && defined(USING_PTHREADS) && USING_PTHREADS
@@ -2889,13 +2876,11 @@ t_stat eth_close(ETH_DEV* dev)
     sim_thread_join (dev->writer_thread, NULL);
 
     sim_tailq_destroy(&dev->read_queue, TRUE);
-    sim_tailq_destroy(&dev->read_buffers, TRUE);
 
     /* Close the ethernet device. */
     _eth_close_port (dev->eth_api, (pcap_t *) dev->handle, dev->fd_handle);
 
     sim_tailq_destroy(&dev->write_requests, TRUE);
-    sim_tailq_destroy(&dev->write_buffers, TRUE);
 
     /* Then continue to clean up the sync primitives that are no longer
      * needed. */
@@ -3342,10 +3327,28 @@ if (routine != NULL)
 return ((status == 0) ? SCPE_OK : SCPE_IOERR);
 }
 
+static sim_tailq_elem_t *queue_writer_buffer(sim_tailq_elem_t *exist_elem, void *item_arg)
+{
+    ETH_WRITE_REQUEST *item = (ETH_WRITE_REQUEST *) exist_elem->elem;
+    ETH_WRITE_REQUEST *replace = (ETH_WRITE_REQUEST *) item_arg;
+
+    if (item == NULL) {
+        item = (ETH_WRITE_REQUEST *) calloc(1, sizeof(ETH_WRITE_REQUEST));
+        if (item != NULL) {
+            exist_elem->elem = item;
+        } else {
+            sim_messagef(SCPE_MEM, "queue_writer_buffer(): calloc() failed.\n");
+        }
+    }
+
+    memcpy(item, replace, sizeof(ETH_WRITE_REQUEST));
+    return exist_elem;
+}
+
 t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 #ifdef USE_READER_THREAD
-ETH_WRITE_REQUEST *request;
+ETH_WRITE_REQUEST request;
 int write_queue_size;
 
 /* make sure device exists */
@@ -3358,23 +3361,18 @@ if (packet->len > sizeof (packet->msg)) /* packet oversized? */
 if (sim_atomic_get(&dev->writer_state) != ETH_THREAD_RUNNING)
     return SCPE_IERR;
 
-  /* Get a buffer */
-request = (ETH_WRITE_REQUEST *) sim_tailq_dequeue_head(&dev->write_buffers);
-if (request == NULL)
-  request = (ETH_WRITE_REQUEST *) malloc(sizeof(*request));
-
 /* Copy buffer contents */
-request->next = NULL;
-request->packet.len = packet->len;
-request->packet.used = packet->used;
-request->packet.status = packet->status;
-request->packet.crc_len = packet->crc_len;
-memcpy(request->packet.msg, packet->msg, packet->len);
-request->next = NULL;
+request.next = NULL;
+request.packet.len = packet->len;
+request.packet.used = packet->used;
+request.packet.status = packet->status;
+request.packet.crc_len = packet->crc_len;
+memcpy(request.packet.msg, packet->msg, packet->len);
+request.next = NULL;
 
 /* Insert buffer at the end of the write list (to make sure that */
 /* packets make it to the wire in the order they were presented here) */
-sim_tailq_append(&dev->write_requests, request);
+sim_tailq_enqueue_xform(&dev->write_requests, queue_writer_buffer, &request);
 write_queue_size = sim_tailq_count(&dev->write_requests);
 
 if (write_queue_size > dev->write_queue_peak)
@@ -4200,23 +4198,16 @@ if (status < 0) {
 #else /* USE_READER_THREAD */
 
   status = 0;
-  ETH_ITEM *item = sim_tailq_dequeue_head(&dev->read_queue);
-
-  int queue_count = 0;
-  sim_tailq_elem_t *p;
-
-  for (p = sim_tailq_iter_head(&dev->read_queue); p != NULL; p = sim_tailq_iter_next(p))
-    ++queue_count;
+  ETH_ITEM *item = sim_tailq_dequeue(&dev->read_queue);
 
   sim_atomic_type_t queue_depth = sim_tailq_count(&dev->read_queue);
-  sim_debug(dev->dbit, dev->dptr, "eth_read: queue depth %" PRIsim_atomic ", count = %d\n", queue_depth, queue_count);
+  sim_debug(dev->dbit, dev->dptr, "eth_read: queue depth %" PRIsim_atomic "\n", queue_depth);
 
   if (item != NULL) {
     packet->len = item->packet.len;
     packet->crc_len = item->packet.crc_len;
     memcpy(packet->msg, item->packet.msg, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
     status = 1;
-    sim_tailq_append(&dev->read_buffers, item);
   }
 
   if ((status) && (routine))
@@ -4481,10 +4472,6 @@ if (dev->eth_api == ETH_API_PCAP) {
       }
     pcap_freecode(&bpf);
     }
-#ifdef USE_READER_THREAD
-  /* Empty FIFO Queue when filter list changes */
-  sim_tailq_splice(&dev->read_buffers, &dev->read_queue);
-#endif
   }
 #endif /* USE_BPF */
 

@@ -68,6 +68,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "sim_tailq.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -326,14 +327,10 @@ struct eth_device {
 
   /* ETH_ITEM tail queue for incoming packets */
   sim_tailq_t         read_queue;
-  /* ETH_ITEM tail queue for free incoming packet buffers. */
-  sim_tailq_t         read_buffers;
   /* Max numer of packets in the read queue. */
   sim_atomic_type_t   read_queue_peak;
   /* ETH_WRITE_REQUEST tail queue of pending outbound packets. */
   sim_tailq_t         write_requests;
-  /* ETH_WRITE_REQUEST tail queue of free buffers. */
-  sim_tailq_t         write_buffers;
   /* Maximum size of the write queue. */
   sim_atomic_type_t   write_queue_peak;
   /* t_stat embedded inside an atomic value. write_status is shared across
