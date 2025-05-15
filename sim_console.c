@@ -328,10 +328,6 @@ static t_stat sim_con_detach (UNIT *uptr)
 return sim_set_notelnet (0, NULL);
 }
 
-/* Forward declarations */
-
-static t_stat sim_os_fd_isatty (int fd);
-
 /* Set/show data structures */
 
 static CTAB set_con_tab[] = {
