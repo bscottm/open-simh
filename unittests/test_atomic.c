@@ -30,7 +30,9 @@
 void os_check_malloc();
 void test_tailq_enqueue(void);
 void test_tailq_dequeue(void);
-void test_thread_head_tail(void);
+void test_thread_head_tail_nodelay(void);
+void test_thread_head_tail_100_200(void);
+void test_thread_head_tail_200_100(void);
 
 static inline uint32_t sim_tailq_actual(const sim_tailq_t *tailq);
 
@@ -118,7 +120,11 @@ int main(void)
     RUN_TEST(test_tailq_dequeue);
 
     /* Threaded testing: */
-    RUN_TEST(test_thread_head_tail);
+    RUN_TEST(test_thread_head_tail_nodelay);
+    /* Faster writer, slower reader. */
+    RUN_TEST(test_thread_head_tail_100_200);
+    /* Slower writer, faster reader. */
+    RUN_TEST(test_thread_head_tail_200_100);
 
     return UNITY_END();
 }
@@ -145,7 +151,7 @@ void test_tailq_enqueue()
     for (i = 0; i < array_size(init_values); ++i)
         sim_tailq_enqueue(&tailq, init_values + i);
 
-    for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p), i++, j++) {
+    for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p, &tailq), i++, j++) {
         TEST_ASSERT_FALSE(j >= array_size(init_values));
         TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_element(p)));
     }
@@ -214,18 +220,42 @@ static int reader_test_elem = 0x0abc1234;
 THREAD_FUNC_DECL(dequeue_head_reader);
 void enqueue_tail_writer(struct timespec *wr_delay, struct timespec *rd_delay);
 
-void test_thread_head_tail(void)
+void test_thread_head_tail_nodelay(void)
 {
-    struct timespec delay100us = {
-        .tv_sec = 0,
-        .tv_nsec = (long) (200ll * NSEC_PER_USEC)
-    };
     struct timespec null_delay = {
         .tv_sec = 0,
         .tv_nsec = 0
     };
 
     enqueue_tail_writer(&null_delay, &null_delay);
+}
+
+void test_thread_head_tail_100_200(void)
+{
+    struct timespec delay100us = {
+        .tv_sec = 0,
+        .tv_nsec = (long) (100ll * NSEC_PER_USEC)
+    };
+    struct timespec delay200us = {
+        .tv_sec = 0,
+        .tv_nsec = (long) (200ll * NSEC_PER_USEC)
+    };
+
+    enqueue_tail_writer(&delay100us, &delay200us);
+}
+
+void test_thread_head_tail_200_100(void)
+{
+    struct timespec delay100us = {
+        .tv_sec = 0,
+        .tv_nsec = (long) (100ll * NSEC_PER_USEC)
+    };
+    struct timespec delay200us = {
+        .tv_sec = 0,
+        .tv_nsec = (long) (200ll * NSEC_PER_USEC)
+    };
+
+    enqueue_tail_writer(&delay200us, &delay100us);
 }
 
 void enqueue_tail_writer(struct timespec *wr_delay, struct timespec *rd_delay)
@@ -373,7 +403,7 @@ uint32_t sim_tailq_actual(const sim_tailq_t *tailq)
     uint32_t queue_count = 0;
     const sim_tailq_elem_t *p;
 
-    for (p = sim_tailq_head(tailq); !sim_tailq_at_tail(p, tailq); p = sim_tailq_next(p))
+    for (p = sim_tailq_head(tailq); !sim_tailq_at_tail(p, tailq); p = sim_tailq_next(p, tailq))
       ++queue_count;
 
     return queue_count;

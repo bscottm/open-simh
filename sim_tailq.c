@@ -71,8 +71,8 @@ void sim_tailq_destroy(sim_tailq_t *tailq, int free_elems)
 
     sim_tailq_elem_t *p;
     
-    for (p = tailq->head; get_tailq_pointer(&p->next) != get_tailq_pointer(&tailq->head); /* empty */) {
-        sim_tailq_elem_t *p_next = get_tailq_pointer(&p->next);
+    for (p = sim_tailq_head(tailq); sim_tailq_next(p, tailq) != sim_tailq_head(tailq); /* empty */) {
+        sim_tailq_elem_t *p_next = get_tailq_pointer(&p->next, tailq);
 
         if (free_elems)
             free(p->elem);
@@ -101,11 +101,24 @@ void sim_tailq_destroy(sim_tailq_t *tailq, int free_elems)
 
 sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *tailq, void *elem)
 {
-    if (get_tailq_pointer(&tailq->tail->next) == sim_tailq_head(tailq)) {
+    if (get_tailq_pointer(&tailq->tail->next, tailq) == sim_tailq_head(tailq)) {
         tailq_add_node(tailq);
     }
 
     advance_tail(tailq)->elem = elem;
+    return tailq;
+}
+
+sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg)
+{
+    if (get_tailq_pointer(&tailq->tail->next, tailq) == sim_tailq_head(tailq)) {
+        tailq_add_node(tailq);
+    }
+
+    sim_tailq_elem_t *exist_elem = advance_tail(tailq);
+    
+    exist_elem->elem = xform(exist_elem, xform_arg);
+
     return tailq;
 }
 
@@ -224,7 +237,7 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
     bool did_xchg;
     
     do {
-        current_next = get_tailq_pointer(&tailq->tail->next);
+        current_next = get_tailq_pointer(&tailq->tail->next, tailq);
         node->next = current_next;
 
 #  if HAVE_STD_ATOMIC

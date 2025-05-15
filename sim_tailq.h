@@ -57,6 +57,9 @@ typedef struct sim_tailq_s {
 #endif
 } sim_tailq_t;
 
+/* Transformation function type. */
+typedef sim_tailq_elem_t *(*sim_tailq_xform_t)(sim_tailq_elem_t *, void *);
+
 
 /*!
  * \brief Initialize an atomic tail queue.
@@ -87,12 +90,15 @@ void sim_tailq_destroy(sim_tailq_t *p, int free_elems);
 
 /* Append to the tail of the tail queue. Returns the */
 sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *elem);
+
+sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg);
+
 /* Take and dequeue the head of the list, returning the element. */
 void *sim_tailq_dequeue(sim_tailq_t *p);
 
 
 /*!
- * Element acccessor function.
+ * Tail queue element acccessor function.
  *
  * \param node A tail queue node
  * \return node->elem
@@ -102,24 +108,28 @@ static SIM_INLINE void *sim_tailq_element(const sim_tailq_elem_t *node)
     return node->elem;
 }
 
-static SIM_INLINE sim_tailq_elem_t *get_tailq_pointer(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) const *ptr)
+static SIM_INLINE sim_tailq_elem_t *get_tailq_pointer(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) const *ptr, const sim_tailq_t *tailq)
 {
     sim_tailq_elem_t *retval;
 
 #if HAVE_STD_ATOMIC
+    (void) tailq;
     retval = atomic_load(ptr);
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
+        (void) tailq;
         __atomic_load(ptr , &retval, __ATOMIC_ACQUIRE);
 #  elif defined(_WIN32) || defined(_WIN64)
 #    if defined(_M_IX86) || defined(_M_X64)
         /* Intel Total Store Ordering optimization. */
         retval = *ptr;
+        (void) tailq;
 #    else
         retval = InterlockedExchangePointer(ptr, *ptr);
+        (void) tailq;
 #    endif
 #  else
-#    error "sim_tailq_head_get: No intrinsic?"
+#    error "get_tailq_pointer: No intrinsic?"
         retval = -1;
 #  endif
 #else
@@ -132,25 +142,39 @@ static SIM_INLINE sim_tailq_elem_t *get_tailq_pointer(SIM_ATOMIC_TYPE(sim_tailq_
 }
 
 /*!
- * Iterator pointer to the tail queue's head. The access to the head element node is atomic.
+ * \brief Tail queue's head node pointer.
  *
- * \param p The tail queue
+ * Returns the tail queue's head pointer, enforcing atomic access. This is only
+ * an accessor function. Higher level functions should check for an empty queue
+ * before iterating through the tailq queue.
+ *
+ * \param tailq The tail queue
  * \return A pointer to the first tail queue list element.
  */
-static SIM_INLINE sim_tailq_elem_t *sim_tailq_head(const sim_tailq_t *p)
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_head(const sim_tailq_t *tailq)
 {
-    return get_tailq_pointer(&p->head);
+    return get_tailq_pointer(&tailq->head, tailq);
 }
 
-static SIM_INLINE sim_tailq_elem_t *sim_tailq_tail(const sim_tailq_t *p)
+/*!
+ * \brief Tail queue's tail node pointer.
+ *
+ * Tail queue's tail node pointer.enforcing atomic access. This is only an
+ * accessor function. Higher level functions should check for an empty queue
+ * before iterating through the tailq queue.
+ *
+ * \param tailq The tail queue
+ * \return A pointer to the tail queue tail element.
+ */
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_tail(const sim_tailq_t *tailq)
 {
-    return get_tailq_pointer(&p->tail);
+    return get_tailq_pointer(&tailq->tail, tailq);
 }
 
 /* Iterator pointer to the next element. */
-static SIM_INLINE sim_tailq_elem_t *sim_tailq_next(const sim_tailq_elem_t *p)
+static SIM_INLINE sim_tailq_elem_t *sim_tailq_next(const sim_tailq_elem_t *p, const sim_tailq_t *tailq)
 {
-    return get_tailq_pointer(&p->next);
+    return get_tailq_pointer(&p->next, tailq);
 }
 
 /*!
@@ -161,13 +185,13 @@ static SIM_INLINE sim_tailq_elem_t *sim_tailq_next(const sim_tailq_elem_t *p)
  */
 static SIM_INLINE t_bool sim_tailq_at_tail(const sim_tailq_elem_t *p, const sim_tailq_t *tailq)
 {
-    return (get_tailq_pointer(&tailq->tail) == p);
+    return (get_tailq_pointer(&tailq->tail, tailq) == p);
 }
 
 /* Get the current element count: */
-static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *p)
+static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *tailq)
 {
-    return sim_atomic_get(&p->n_elements);
+    return sim_atomic_get(&tailq->n_elements);
 }
 
 /*!
@@ -175,9 +199,9 @@ static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *p)
  *
  * \return 0 if not empty, otherwise 1.
  */
-static SIM_INLINE int sim_tailq_empty(const sim_tailq_t * const p)
+static SIM_INLINE int sim_tailq_empty(const sim_tailq_t * const tailq)
 {
-    return (get_tailq_pointer(&p->head) == get_tailq_pointer(&p->tail));
+    return (get_tailq_pointer(&tailq->head, tailq) == get_tailq_pointer(&tailq->tail, tailq));
 }
 
 #define SIM_TAILQ_H
