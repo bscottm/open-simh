@@ -13679,8 +13679,6 @@ if (len > 0) {
     printf("errno %d (%s)\r\n", errno, strerror(errno));
     fflush(stdout);
     }
-
-AIO_DEBUG_UNLOCK;
 }
 
 static void _debug_fwrite (const char *buf, size_t len)

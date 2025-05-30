@@ -55,7 +55,7 @@ static SIM_INLINE int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn f
     return thrd_create(thread_id, func, arg);
 #elif defined(USING_PTHREADS) && USING_PTHREADS
     pthread_attr_t attr;
-    pthread_t retval;
+    int retval;
 
     pthread_attr_init (&attr);
     pthread_attr_setscope (&attr, PTHREAD_SCOPE_SYSTEM);

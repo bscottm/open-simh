@@ -1,12 +1,10 @@
 #if !defined(SIM_BOOL_H)
 
 /* Boolean flag type: */
-#if defined(__STDC_VERSION__)
-#  if __STDC_VERSION__ >= 199901L
-     /* bool, true, false are keywords in C23. */
-#    if __STDC_VERSION__ < 202311L
-#      include <stdbool.h>
-#    endif
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (defined(_MSC_VER) && _MSV_VER >= 1800)
+   /* bool, true, false are keywords in C23. */
+#  if __STDC_VERSION__ < 202311L || defined(_MSC_VER)
+#    include <stdbool.h>
 #  endif
 #  if defined(TRUE)
 #    undef TRUE

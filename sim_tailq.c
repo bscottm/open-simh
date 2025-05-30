@@ -75,13 +75,13 @@ void sim_tailq_destroy(sim_tailq_t *tailq, int free_elems)
         sim_tailq_elem_t *p_next = get_tailq_pointer(&p->next, tailq);
 
         if (free_elems)
-            free(p->elem);
+            free(p->item);
         free(p);
         p = p_next;
     }
 
     if (free_elems)
-        free(p->elem);
+        free(p->item);
     free(p);
 
     tailq->head = tailq->tail = NULL;
@@ -99,16 +99,6 @@ void sim_tailq_destroy(sim_tailq_t *tailq, int free_elems)
  * Basic operations:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *tailq, void *elem)
-{
-    if (get_tailq_pointer(&tailq->tail->next, tailq) == sim_tailq_head(tailq)) {
-        tailq_add_node(tailq);
-    }
-
-    advance_tail(tailq)->elem = elem;
-    return tailq;
-}
-
 sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg)
 {
     if (get_tailq_pointer(&tailq->tail->next, tailq) == sim_tailq_head(tailq)) {
@@ -116,17 +106,25 @@ sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform
     }
 
     sim_tailq_elem_t *exist_elem = advance_tail(tailq);
-    
-    exist_elem->elem = xform(exist_elem, xform_arg);
+    exist_elem->item = xform(exist_elem->item, xform_arg);
 
     return tailq;
 }
 
-void *sim_tailq_dequeue(sim_tailq_t *tailq)
+static SIM_INLINE sim_tailq_item_t null_item_transform(sim_tailq_item_t ignored, void *new_item)
 {
-    return (sim_tailq_head(tailq) != sim_tailq_tail(tailq) ? advance_head(tailq)->elem : NULL);
+    return new_item;
 }
 
+void *sim_tailq_dequeue(sim_tailq_t *tailq)
+{
+    return (sim_tailq_head(tailq) != sim_tailq_tail(tailq) ? advance_head(tailq)->item : NULL);
+}
+
+sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *tailq, sim_tailq_item_t elem)
+{
+    return sim_tailq_enqueue_xform(tailq, null_item_transform, elem);
+}
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * Utilities:
@@ -141,7 +139,7 @@ sim_tailq_elem_t *tailq_alloc()
         sim_tailq_elem_t *p = (sim_tailq_elem_t *) malloc(sizeof(sim_tailq_elem_t));
 
         if (p != NULL) {
-            p->elem = NULL;
+            p->item = NULL;
 
             if (first != NULL) {
                 last->next = p;
@@ -167,7 +165,7 @@ sim_tailq_elem_t *advance_head(sim_tailq_t *tailq)
     bool did_xchg;
     
     do {
-        current_head = tailq->head;
+        current_head = sim_tailq_head(tailq);
 #  if HAVE_STD_ATOMIC
         did_xchg = atomic_compare_exchange_strong(&tailq->head, &current_head, tailq->head->next);
 #  elif HAVE_ATOMIC_PRIMS 
@@ -206,7 +204,7 @@ sim_tailq_elem_t *advance_tail(sim_tailq_t *tailq)
 #    if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
         did_xchg = __atomic_compare_exchange(&tailq->tail, &current_tail, &current_tail->next, 
                                              false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-#    elif HAVE_ATOMIC_PRIMS && (defined(_WIN32) || defined(_WIN64))
+#    elif defined(_WIN32) || defined(_WIN64)
         PVOID retval = InterlockedCompareExchangePointer(&tailq->tail, current_tail->next, current_tail);
         did_xchg = (retval == current_tail);
 #    endif
@@ -231,7 +229,7 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
     if (node == NULL)
         return NULL;
 
-     node->elem = NULL;
+     node->item = NULL;
 
 #if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
     bool did_xchg;

@@ -30,6 +30,7 @@
 void os_check_malloc();
 void test_tailq_enqueue(void);
 void test_tailq_dequeue(void);
+void test_tailq_enqueue_xform(void);
 void test_thread_head_tail_nodelay(void);
 void test_thread_head_tail_100_200(void);
 void test_thread_head_tail_200_100(void);
@@ -75,16 +76,11 @@ uint32_t rand_next(rand_state_t seed);
 uint32_t rand_int_range (rand_state_t rand, int begin, int end);
 
 /* Test data: */
+#if !defined(array_size)
 #define array_size(arr) (sizeof(arr) / sizeof(arr[0]))
+#endif
 
 int init_values[] = {  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 21, 32, 43, 54, 65, 76, 87, 98, 47, 22 };
-int tail_values[] = { 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 };
-int xtra_values[] = { 31, 32, 33, 34 };
-int deep_values[] = { 49, 48, 47 };
-
-int expected_1[] = {  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 };
-int expected_2[] = { 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10 };
-int expected_3[] = {  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34 };
 
 void setUp(void)
 {
@@ -118,6 +114,7 @@ int main(void)
     /* Basic functionality tests: */
     RUN_TEST(test_tailq_enqueue);
     RUN_TEST(test_tailq_dequeue);
+    RUN_TEST(test_tailq_enqueue_xform);
 
     /* Threaded testing: */
     RUN_TEST(test_thread_head_tail_nodelay);
@@ -140,6 +137,8 @@ void os_check_malloc()
 #endif
 }
 
+/* Test basic enqueuing -- queue up a bunch of values, make sure they're enqueued in the
+ * expected order. */
 void test_tailq_enqueue()
 {
     sim_tailq_t tailq;
@@ -162,6 +161,8 @@ void test_tailq_enqueue()
     os_check_malloc();
 }
 
+/* Enqueue a bunch of values, then dequeue them and ensure they dequeue in the proper
+ * order. */
 void test_tailq_dequeue(void)
 {
     sim_tailq_t tailq;
@@ -180,6 +181,43 @@ void test_tailq_dequeue(void)
     }
 
     TEST_ASSERT_EQUAL(0, sim_tailq_count(&tailq));
+
+    sim_tailq_destroy(&tailq, 0);
+    os_check_malloc();
+}
+
+/* Transform function used by test_tailq_enqueue_xform(). */
+static sim_tailq_item_t xform_func(sim_tailq_item_t item, void *item_arg)
+{
+    int *int_elem = (int *) item;
+
+    if (int_elem == NULL) {
+        int_elem = (int *) malloc(sizeof(int));
+        TEST_ASSERT_NOT_NULL_MESSAGE(int_elem, "NULL int_elem");
+    }
+
+    *int_elem = *((int *) item_arg);
+    return int_elem;
+}
+
+/* Test basic enqueuing with the function transform. */
+void test_tailq_enqueue_xform()
+{
+    sim_tailq_t tailq;
+    sim_tailq_elem_t const *p;
+    size_t i, j;
+
+    sim_tailq_init(&tailq);
+
+    for (i = 0; i < array_size(init_values); ++i)
+        sim_tailq_enqueue_xform(&tailq, xform_func, init_values + i);
+
+    for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p, &tailq), i++, j++) {
+        TEST_ASSERT_FALSE(j >= array_size(init_values));
+        TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_element(p)));
+    }
+
+    TEST_ASSERT_EQUAL(sim_tailq_count(&tailq), array_size(init_values));
 
     sim_tailq_destroy(&tailq, 0);
     os_check_malloc();

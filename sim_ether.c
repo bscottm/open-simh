@@ -2141,22 +2141,20 @@ _eth_callback((u_char *)opaque, &header, buf);
         SIM_UNUSED_ARG(opaque);
     }
 
-    static sim_tailq_elem_t *queue_reader_buffer(sim_tailq_elem_t *exist_elem, void *item_arg)
+    static sim_tailq_item_t queue_reader_buffer(sim_tailq_item_t item, void *item_arg)
     {
-      ETH_ITEM *item = (ETH_ITEM *) exist_elem->elem;
+      ETH_ITEM *eth_item = (ETH_ITEM *) item;
       ETH_ITEM *replace = (ETH_ITEM *) item_arg;
 
-      if (item == NULL) {
-          item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
-          if (item != NULL) {
-            exist_elem->elem = item;
-          } else {
+      if (eth_item == NULL) {
+          eth_item = (ETH_ITEM *) calloc(1, sizeof(ETH_ITEM));
+          if (eth_item == NULL) {
               sim_messagef(SCPE_MEM, "reader_enqueue_data(): calloc() failed.\n");
           }
       }
 
-      memcpy(item, replace, sizeof(ETH_ITEM));
-      return exist_elem;
+      memcpy(eth_item, replace, sizeof(ETH_ITEM));
+      return eth_item;
     }
 
     void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
@@ -3327,22 +3325,21 @@ if (routine != NULL)
 return ((status == 0) ? SCPE_OK : SCPE_IOERR);
 }
 
-static sim_tailq_elem_t *queue_writer_buffer(sim_tailq_elem_t *exist_elem, void *item_arg)
+static sim_tailq_item_t queue_writer_buffer(sim_tailq_item_t item, void *item_arg)
 {
-    ETH_WRITE_REQUEST *item = (ETH_WRITE_REQUEST *) exist_elem->elem;
+    ETH_WRITE_REQUEST *eth_req = (ETH_WRITE_REQUEST *) item;
     ETH_WRITE_REQUEST *replace = (ETH_WRITE_REQUEST *) item_arg;
 
-    if (item == NULL) {
-        item = (ETH_WRITE_REQUEST *) calloc(1, sizeof(ETH_WRITE_REQUEST));
-        if (item != NULL) {
-            exist_elem->elem = item;
-        } else {
+    if (eth_req == NULL) {
+        eth_req = (ETH_WRITE_REQUEST *) calloc(1, sizeof(ETH_WRITE_REQUEST));
+        if (eth_req == NULL) {
             sim_messagef(SCPE_MEM, "queue_writer_buffer(): calloc() failed.\n");
+            /* Need to do something better here.*/
         }
     }
 
-    memcpy(item, replace, sizeof(ETH_WRITE_REQUEST));
-    return exist_elem;
+    memcpy(eth_req, replace, sizeof(ETH_WRITE_REQUEST));
+    return eth_req;
 }
 
 t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
@@ -3354,12 +3351,9 @@ int write_queue_size;
 /* make sure device exists */
 if ((dev == NULL) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
 
-if (packet->len > sizeof (packet->msg)) /* packet oversized? */
-    return SCPE_IERR;                   /* that's no good! */
-
-/* Writer thread alive? */
-if (sim_atomic_get(&dev->writer_state) != ETH_THREAD_RUNNING)
-    return SCPE_IERR;
+if (packet->len > sizeof (packet->msg) ||                     /* packet oversized? */
+    sim_atomic_get(&dev->writer_state) != ETH_THREAD_RUNNING) /* no writer thread? */
+    return SCPE_IERR;                                         /* that's no good! */
 
 /* Copy buffer contents */
 request.next = NULL;

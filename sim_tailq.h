@@ -14,11 +14,18 @@
 #include "sim_atomic.h"
 
 /*!
+ * \brief Tail queue item type.
+ * 
+ * Generic pointer to items stored in the tail queue.
+ */
+typedef void *sim_tailq_item_t;
+
+/*!
  * Tail queue list element type.
  */
 typedef struct sim_tailq_elem_s {
     /*! Generic element pointer. */
-    void *elem;
+    sim_tailq_item_t item;
     /*! Next element in the tail queue. */
     SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
 } sim_tailq_elem_t;
@@ -58,7 +65,7 @@ typedef struct sim_tailq_s {
 } sim_tailq_t;
 
 /* Transformation function type. */
-typedef sim_tailq_elem_t *(*sim_tailq_xform_t)(sim_tailq_elem_t *, void *);
+typedef sim_tailq_item_t (*sim_tailq_xform_t)(sim_tailq_item_t, void *);
 
 
 /*!
@@ -84,12 +91,12 @@ int sim_tailq_paired_init(sim_tailq_t *tailq, sim_mutex_t *mutex);
 
 /* Clean up the queue and deallocate the queue's sim_tailq_elem_t elements.
  *
- * Optionally, if free_elems != 0, free the sim_tailq_elem_t's elem as well.
+ * Optionally, if free_elems != 0, free the sim_tailq_elem_t's item as well.
  */
 void sim_tailq_destroy(sim_tailq_t *p, int free_elems);
 
 /* Append to the tail of the tail queue. Returns the */
-sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *elem);
+sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *item);
 
 sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg);
 
@@ -101,11 +108,11 @@ void *sim_tailq_dequeue(sim_tailq_t *p);
  * Tail queue element acccessor function.
  *
  * \param node A tail queue node
- * \return node->elem
+ * \return node->item
  */
 static SIM_INLINE void *sim_tailq_element(const sim_tailq_elem_t *node)
 {
-    return node->elem;
+    return node->item;
 }
 
 static SIM_INLINE sim_tailq_elem_t *get_tailq_pointer(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) const *ptr, const sim_tailq_t *tailq)
