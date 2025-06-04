@@ -21,11 +21,23 @@
 typedef void *sim_tailq_item_t;
 
 /*!
+ * \brief Tail queue item status
+ *
+ * Item status indicator while modifying the item pointer.
+ */
+typedef enum sim_tailq_item_status_e {
+  TAILQ_ITEM_READY,
+  TAILQ_ITEM_BUSY
+} sim_tailq_item_status_t;
+
+/*!
  * Tail queue list element type.
  */
 typedef struct sim_tailq_elem_s {
     /*! Generic element pointer. */
     sim_tailq_item_t item;
+    /*! Item status */
+    SIM_ATOMIC_TYPE(sim_tailq_item_status_t) item_status;
     /*! Next element in the tail queue. */
     SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
 } sim_tailq_elem_t;
@@ -209,6 +221,39 @@ static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *tailq)
 static SIM_INLINE int sim_tailq_empty(const sim_tailq_t * const tailq)
 {
     return (get_tailq_pointer(&tailq->head, tailq) == get_tailq_pointer(&tailq->tail, tailq));
+}
+
+static SIM_INLINE sim_tailq_item_status_t sim_tailq_item_status(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) elem, const sim_tailq_t *tailq)
+{
+    sim_tailq_item_status_t retval;
+
+#if HAVE_STD_ATOMIC
+    (void) tailq;
+    retval = atomic_load(&elem->item_status);
+#elif HAVE_ATOMIC_PRIMS
+#  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
+        (void) tailq;
+        __atomic_load(&elem->item_status, &retval, __ATOMIC_ACQUIRE);
+#  elif defined(_WIN32) || defined(_WIN64)
+#    if defined(_M_IX86) || defined(_M_X64)
+        /* Intel Total Store Ordering optimization. */
+        retval = elem->item_status;
+        (void) tailq;
+#    else
+        retval = InterlockedExchange(&elem->item_status, elem->item_status);
+        (void) tailq;
+#    endif
+#  else
+#    error "sim_tailq_item_status: No intrinsic?"
+        retval = -1;
+#  endif
+#else
+    sim_mutex_lock(tailq->lock);
+    retval = elem->item_status;
+    sim_mutex_unlock(tailq->lock);
+#endif
+
+    return retval;
 }
 
 #define SIM_TAILQ_H

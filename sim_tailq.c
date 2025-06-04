@@ -16,9 +16,6 @@
 #include "sim_tailq.h"
 
 /* Forward decl's: */
-#if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
-#endif
-
 static SIM_INLINE sim_tailq_elem_t *tailq_alloc();
 static SIM_INLINE sim_tailq_elem_t *advance_head(sim_tailq_t *tailq);
 static SIM_INLINE sim_tailq_elem_t *advance_tail(sim_tailq_t *tailq);
@@ -26,6 +23,9 @@ static SIM_INLINE sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq);
 
 static SIM_INLINE void tailq_lock(sim_tailq_t *tailq);
 static SIM_INLINE void tailq_unlock(sim_tailq_t *tailq);
+
+static SIM_INLINE void set_item_status(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) elem, const sim_tailq_t *tailq,
+				       sim_tailq_item_status_t status);
 
 static const size_t INITIAL_TAILQ_NODES = 17;
 
@@ -106,24 +106,37 @@ sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform
     }
 
     sim_tailq_elem_t *exist_elem = advance_tail(tailq);
+
+    set_item_status(exist_elem, tailq, TAILQ_ITEM_BUSY);
     exist_elem->item = xform(exist_elem->item, xform_arg);
+    set_item_status(exist_elem, tailq, TAILQ_ITEM_READY);
 
     return tailq;
 }
 
-static SIM_INLINE sim_tailq_item_t null_item_transform(sim_tailq_item_t ignored, void *new_item)
+void *sim_tailq_dequeue(sim_tailq_t *tailq)
+{
+  if (sim_tailq_head(tailq) != sim_tailq_tail(tailq)) {
+    sim_tailq_elem_t *elem = advance_head(tailq)->item;
+
+    /* Spin until ready. */
+    while (sim_tailq_item_status(elem, tailq) == TAILQ_ITEM_BUSY) {
+      /* NOP */
+    }
+
+    return elem;
+  } else
+      return NULL;
+}
+
+static SIM_INLINE sim_tailq_item_t identity_item_transform(sim_tailq_item_t ignored, void *new_item)
 {
     return new_item;
 }
 
-void *sim_tailq_dequeue(sim_tailq_t *tailq)
-{
-    return (sim_tailq_head(tailq) != sim_tailq_tail(tailq) ? advance_head(tailq)->item : NULL);
-}
-
 sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *tailq, sim_tailq_item_t elem)
 {
-    return sim_tailq_enqueue_xform(tailq, null_item_transform, elem);
+    return sim_tailq_enqueue_xform(tailq, identity_item_transform, elem);
 }
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -140,6 +153,7 @@ sim_tailq_elem_t *tailq_alloc()
 
         if (p != NULL) {
             p->item = NULL;
+	    p->item_status = TAILQ_ITEM_READY;
 
             if (first != NULL) {
                 last->next = p;
@@ -230,6 +244,7 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
         return NULL;
 
      node->item = NULL;
+     node->item_status = TAILQ_ITEM_READY;
 
 #if HAVE_STD_ATOMIC || HAVE_ATOMIC_PRIMS
     bool did_xchg;
@@ -270,6 +285,36 @@ void tailq_lock(sim_tailq_t *tailq)
 void tailq_unlock(sim_tailq_t *tailq)
 {
 #if NEED_VALUE_MUTEX
+    sim_mutex_unlock(tailq->lock);
+#endif
+}
+
+static SIM_INLINE void set_item_status(SIM_ATOMIC_TYPE(sim_tailq_elem_t *) elem, const sim_tailq_t *tailq,
+				       sim_tailq_item_status_t status)
+{
+#if HAVE_STD_ATOMIC
+    (void) tailq;
+    atomic_store(&elem->item_status, status);
+#elif HAVE_ATOMIC_PRIMS
+#  if defined(__ATOMIC_ACQUIRE) && (defined(__GNUC__) || defined(__clang__))
+        (void) tailq;
+        __atomic_store(&elem->item_status, &status, __ATOMIC_RELEASE);
+#  elif defined(_WIN32) || defined(_WIN64)
+#    if defined(_M_IX86) || defined(_M_X64)
+        /* Intel Total Store Ordering optimization. */
+        elem->item_status = status;
+        (void) tailq;
+#    else
+        InterlockedExchange(&elem->item_status, status);
+        (void) tailq;
+#    endif
+#  else
+#    error "set_item_status: No intrinsic?"
+        retval = -1;
+#  endif
+#else
+    sim_mutex_lock(tailq->lock);
+    elem->item_status = status;
     sim_mutex_unlock(tailq->lock);
 #endif
 }
