@@ -1275,7 +1275,7 @@ extern int32 sim_asynch_inst_latency;
       sim_cond_init(&sim_timer_wake);                             \
       sim_mutex_init(&sim_tmxr_poll_lock);                        \
       sim_cond_init(&sim_tmxr_poll_cond);                         \
-      sim_mutex_init (&sim_debug_lock);                           \
+      sim_mutex_recursive(&sim_debug_lock);                       \
                                                                   \
       sim_asynch_main_threadid = sim_thread_self();               \
       /* Empty list/list end uses the point value (void *)1.      \
