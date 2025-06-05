@@ -152,7 +152,7 @@ void test_tailq_enqueue()
 
     for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p, &tailq), i++, j++) {
         TEST_ASSERT_FALSE(j >= array_size(init_values));
-        TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_element(p)));
+        TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_item(p)));
     }
 
     TEST_ASSERT_EQUAL(sim_tailq_count(&tailq), array_size(init_values));
@@ -214,7 +214,7 @@ void test_tailq_enqueue_xform()
 
     for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p, &tailq), i++, j++) {
         TEST_ASSERT_FALSE(j >= array_size(init_values));
-        TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_element(p)));
+        TEST_ASSERT_EQUAL_INT(init_values[j], *((int *) sim_tailq_item(p)));
     }
 
     TEST_ASSERT_EQUAL(sim_tailq_count(&tailq), array_size(init_values));

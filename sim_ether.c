@@ -2232,7 +2232,6 @@ _eth_callback((u_char *)opaque, &header, buf);
     {
         ETH_DEV *dev = (ETH_DEV*) arg;
         sim_tailq_t request;
-        sim_tailq_elem_t *work_unit = NULL;
 
         /* Boost Priority for this I/O thread vs the CPU instruction execution
            thread which in general won't be readily yielding the processor when
@@ -2249,8 +2248,8 @@ _eth_callback((u_char *)opaque, &header, buf);
         sim_mutex_unlock(&dev->startup_lock);
 
         while (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
-            work_unit = sim_tailq_dequeue(&dev->write_requests);
-            if (work_unit != NULL) {
+            ETH_WRITE_REQUEST *write_req = sim_tailq_dequeue(&dev->write_requests);
+            if (write_req != NULL) {
                 /* Process the queued packets as an ensemble. */
                 if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
                     uint32 packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
@@ -2264,8 +2263,6 @@ _eth_callback((u_char *)opaque, &header, buf);
 
                     dev->throttle_packet_time = sim_os_msec();
                 }
-
-                ETH_WRITE_REQUEST *write_req = (ETH_WRITE_REQUEST *) sim_tailq_element(work_unit);
                 
                 sim_atomic_put(&dev->write_status, _eth_write(dev, &write_req->packet, NULL));
             } else {
@@ -4026,28 +4023,7 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
 
     sim_atomic_type_t queue_count = sim_tailq_count(&dev->read_queue);
 
-#if 0
-    if ((queue_count == 1 || dev->asynch_io) && !sim_unit_aio_pending(dev->dptr->units)) {
-      /* Kick the simulator's lower half UNIT handler if the read queue's depth is 1 (just received
-       * a packet) or an ansynchronous service event is not already scheduled.
-       *
-       * This allows packets to accumulate while ensuring that there is a pending UNIT event
-       * to processes them. Otherwise, the simulator's receiver will stall and unprocessed
-       * packets will accumulate. */
-
-      //--- pthread_mutex_lock (&dev->lock);
-      sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
-      sim_debug(dev->dbit, dev->dptr, "Scheduling UNIT service event to drain queue (depth = %d)\n",
-                queue_count);
-      //--- pthread_mutex_unlock (&dev->lock);
-      }
-    else {
-      sim_debug(dev->dbit, dev->dptr, "Deferred -- pending UNIT service event (depth = %d)\n",
-                queue_count);
-      }
-#else
-      sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
-#endif
+    sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
 
     if (queue_count > dev->read_queue_peak)
         dev->read_queue_peak = queue_count;
@@ -4513,10 +4489,12 @@ if (dev->asynch_io)
   fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
 if (dev->throttle_count)
   fprintf(st, "  Throttle Delays:         %d\n", dev->throttle_count);
-fprintf(st, "  Read Queue:  Peak:       %" PRIsim_atomic "\n", dev->read_queue_peak);
-fprintf(st, "  Read Queue:  Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->read_queue));
+fprintf(st, "  Read Queue   Peak:       %" PRIsim_atomic "\n", dev->read_queue_peak);
+fprintf(st, "               Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->read_queue));
+fprintf(st, "               Alloc:      %" PRIsim_atomic "\n", sim_tailq_allocated(&dev->read_queue));
 fprintf(st, "  Write Queue: Peak:       %" PRIsim_atomic "\n", dev->write_queue_peak);
-fprintf(st, "  Write Queue: Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->write_requests));
+fprintf(st, "               Count:      %" PRIsim_atomic "\n", sim_tailq_count(&dev->write_requests));
+fprintf(st, "               Alloc:      %" PRIsim_atomic "\n", sim_tailq_allocated(&dev->write_requests));
 #endif
 if (dev->error_needs_reset)
   fprintf(st, "  In Error Needs Reset:    True\n");

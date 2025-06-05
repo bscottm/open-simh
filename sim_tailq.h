@@ -42,9 +42,6 @@ typedef struct sim_tailq_elem_s {
     SIM_ATOMIC_TYPE(struct sim_tailq_elem_s *) next;
 } sim_tailq_elem_t;
 
-/*! List pointer type. */
-typedef SIM_ATOMIC_TYPE(sim_tailq_elem_t *) sim_tailq_list_t;
-
 /* The list type, itself. */
 typedef struct sim_tailq_s {
     /*! List head, first element. */
@@ -53,6 +50,18 @@ typedef struct sim_tailq_s {
     SIM_ATOMIC_TYPE(sim_tailq_elem_t *) tail;
     /*! Current active element count. */
     sim_atomic_value_t n_elements;
+    /*! Maximum number of elements allocated. */
+    sim_atomic_value_t n_allocated;
+
+    #if NEED_VALUE_MUTEX
+    /*!
+     * \brief Modification mutex
+     *
+     * This mutex is acquired when lock-free or atomic variable support is
+     * unavailable, or when modifying the internal allocation state of the tail
+     * queue.
+     */
+    sim_mutex_t *lock;
 
     /*!
      * \brief Paired mutex flag.
@@ -64,21 +73,11 @@ typedef struct sim_tailq_s {
      * 1: Paired.
      */
     int paired;
-#if NEED_VALUE_MUTEX
-    /*!
-     * \brief Modification mutex
-     *
-     * This mutex is acquired when lock-free or atomic variable support is
-     * unavailable, or when modifying the internal allocation state of the tail
-     * queue.
-     */
-    sim_mutex_t *lock;
 #endif
 } sim_tailq_t;
 
 /* Transformation function type. */
 typedef sim_tailq_item_t (*sim_tailq_xform_t)(sim_tailq_item_t, void *);
-
 
 /*!
  * \brief Initialize an atomic tail queue.
@@ -113,8 +112,7 @@ sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *item);
 sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg);
 
 /* Take and dequeue the head of the list, returning the element. */
-void *sim_tailq_dequeue(sim_tailq_t *p);
-
+sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *p);
 
 /*!
  * Tail queue element acccessor function.
@@ -122,7 +120,7 @@ void *sim_tailq_dequeue(sim_tailq_t *p);
  * \param node A tail queue node
  * \return node->item
  */
-static SIM_INLINE void *sim_tailq_element(const sim_tailq_elem_t *node)
+static SIM_INLINE void *sim_tailq_item(const sim_tailq_elem_t *node)
 {
     return node->item;
 }
@@ -211,6 +209,12 @@ static SIM_INLINE t_bool sim_tailq_at_tail(const sim_tailq_elem_t *p, const sim_
 static SIM_INLINE sim_atomic_type_t sim_tailq_count(const sim_tailq_t *tailq)
 {
     return sim_atomic_get(&tailq->n_elements);
+}
+
+/* Get the total allocation. */
+static SIM_INLINE sim_atomic_type_t sim_tailq_allocated(const sim_tailq_t *tailq)
+{
+    return sim_atomic_get(&tailq->n_allocated);
 }
 
 /*!
