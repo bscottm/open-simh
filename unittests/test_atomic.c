@@ -148,7 +148,7 @@ void test_tailq_enqueue()
     sim_tailq_init(&tailq);
 
     for (i = 0; i < array_size(init_values); ++i)
-        sim_tailq_enqueue(&tailq, init_values + i);
+        sim_tailq_enqueue(&tailq, (sim_tailq_item_t) (init_values + i));
 
     for (i = 1, j = 0, p = sim_tailq_head(&tailq); !sim_tailq_at_tail(p, &tailq); p = sim_tailq_next(p, &tailq), i++, j++) {
         TEST_ASSERT_FALSE(j >= array_size(init_values));
@@ -173,7 +173,7 @@ void test_tailq_dequeue(void)
 
     /* Enqueue a bunch of values: */
     for (i = 0; i < array_size(init_values); ++i)
-        sim_tailq_enqueue(&tailq, init_values + i);
+        sim_tailq_enqueue(&tailq, (sim_tailq_item_t) (init_values + i));
 
     for (i = 0, thing = sim_tailq_dequeue(&tailq); thing != NULL; thing = sim_tailq_dequeue(&tailq), i++) {
         TEST_ASSERT_FALSE(i >= array_size(init_values));
@@ -197,7 +197,7 @@ static sim_tailq_item_t xform_func(sim_tailq_item_t item, void *item_arg)
     }
 
     *int_elem = *((int *) item_arg);
-    return int_elem;
+    return ((sim_tailq_item_t) int_elem);
 }
 
 /* Test basic enqueuing with the function transform. */
@@ -336,7 +336,7 @@ void enqueue_tail_writer(struct timespec *wr_delay, struct timespec *rd_delay)
                 fflush(stdout);
             }
 
-            sim_tailq_enqueue(&tailq, &reader_test_elem);
+            sim_tailq_enqueue(&tailq, (sim_tailq_item_t) &reader_test_elem);
             --burst;
             ++i;
         }

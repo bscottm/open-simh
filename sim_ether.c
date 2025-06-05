@@ -2154,7 +2154,7 @@ _eth_callback((u_char *)opaque, &header, buf);
       }
 
       memcpy(eth_item, replace, sizeof(ETH_ITEM));
-      return eth_item;
+      return ((sim_tailq_item_t) eth_item);
     }
 
     void reader_enqueue_data(ETH_DEV *dev, int32 type, const uint8 *data, int used, size_t len, size_t crc_len, const uint8 *crc_data, int32 status)
@@ -2248,7 +2248,7 @@ _eth_callback((u_char *)opaque, &header, buf);
         sim_mutex_unlock(&dev->startup_lock);
 
         while (sim_atomic_get(&dev->writer_state) == ETH_THREAD_RUNNING) {
-            ETH_WRITE_REQUEST *write_req = sim_tailq_dequeue(&dev->write_requests);
+            ETH_WRITE_REQUEST *write_req = (ETH_WRITE_REQUEST *) sim_tailq_dequeue(&dev->write_requests);
             if (write_req != NULL) {
                 /* Process the queued packets as an ensemble. */
                 if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
@@ -3336,7 +3336,7 @@ static sim_tailq_item_t queue_writer_buffer(sim_tailq_item_t item, void *item_ar
     }
 
     memcpy(eth_req, replace, sizeof(ETH_WRITE_REQUEST));
-    return eth_req;
+    return ((sim_tailq_item_t) eth_req);
 }
 
 t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
@@ -4168,7 +4168,7 @@ if (status < 0) {
 #else /* USE_READER_THREAD */
 
   status = 0;
-  ETH_ITEM *item = sim_tailq_dequeue(&dev->read_queue);
+  ETH_ITEM *item = (ETH_ITEM *) sim_tailq_dequeue(&dev->read_queue);
 
   sim_atomic_type_t queue_depth = sim_tailq_count(&dev->read_queue);
   sim_debug(dev->dbit, dev->dptr, "eth_read: queue depth %" PRIsim_atomic "\n", queue_depth);

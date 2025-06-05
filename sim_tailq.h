@@ -18,7 +18,7 @@
  * 
  * Generic pointer to items stored in the tail queue.
  */
-typedef void *sim_tailq_item_t;
+typedef struct {} *sim_tailq_item_t;
 
 /*!
  * \brief Tail queue item status
@@ -107,7 +107,7 @@ int sim_tailq_paired_init(sim_tailq_t *tailq, sim_mutex_t *mutex);
 void sim_tailq_destroy(sim_tailq_t *p, int free_elems);
 
 /* Append to the tail of the tail queue. Returns the */
-sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, void *item);
+sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *p, sim_tailq_item_t item);
 
 sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform, void *xform_arg);
 
