@@ -2172,7 +2172,7 @@ _eth_callback((u_char *)opaque, &header, buf);
           memcpy(&item.packet.msg[len], crc_data, ETH_CRC_SIZE);
         }
       else {
-        item.packet.oversize = (uint8 *)realloc (item.packet.oversize, ((len > crc_len) ? len : crc_len));
+        item.packet.oversize = (uint8 *) malloc((len > crc_len) ? len : crc_len);
         memcpy(item.packet.oversize, data, ((len > crc_len) ? len : crc_len));
         if (crc_data && (crc_len > len))
           memcpy(&item.packet.oversize[len], crc_data, ETH_CRC_SIZE);
