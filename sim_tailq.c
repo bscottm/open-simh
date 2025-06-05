@@ -35,17 +35,18 @@ static const size_t INITIAL_TAILQ_NODES = 17;
 
 int sim_tailq_init(sim_tailq_t* tailq)
 {
-    if ((tailq->head = tailq->tail = tailq_alloc(tailq)) == NULL)
-        return 0;
-    
 #if NEED_VALUE_MUTEX
-    tailq->lock = (sim_mutex_t*)malloc(sizeof(sim_mutex_t));
+    tailq->lock = (sim_mutex_t*) malloc(sizeof(sim_mutex_t));
     sim_mutex_recursive(tailq->lock);
     tailq->paired = FALSE;
 
     /* This mutex is paired with the element counter. */
     sim_atomic_paired_init(&tailq->n_elements, tailq->lock);
+    sim_atomic_paired_init(&tailq->n_allocated, tailq->lock);
 #endif
+
+    if ((tailq->head = tailq->tail = tailq_alloc(tailq)) == NULL)
+        return 0;
 
     sim_atomic_put(&tailq->n_elements, 0);
     return 1;
