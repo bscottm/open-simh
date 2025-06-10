@@ -3322,28 +3322,37 @@ if (routine != NULL)
 return ((status == 0) ? SCPE_OK : SCPE_IOERR);
 }
 
+#if defined(USE_READER_THREAD)
 static sim_tailq_item_t queue_writer_buffer(sim_tailq_item_t item, void *item_arg)
 {
-    ETH_WRITE_REQUEST *eth_req = (ETH_WRITE_REQUEST *) item;
-    ETH_WRITE_REQUEST *replace = (ETH_WRITE_REQUEST *) item_arg;
+    ETH_WRITE_REQUEST *request = (ETH_WRITE_REQUEST *) item;
+    ETH_PACK *packet = (ETH_PACK *) item_arg;
 
-    if (eth_req == NULL) {
-        eth_req = (ETH_WRITE_REQUEST *) calloc(1, sizeof(ETH_WRITE_REQUEST));
-        if (eth_req == NULL) {
+    if (request == NULL) {
+        request = (ETH_WRITE_REQUEST *) calloc(1, sizeof(ETH_WRITE_REQUEST));
+        if (request == NULL) {
             sim_messagef(SCPE_MEM, "queue_writer_buffer(): calloc() failed.\n");
             /* Need to do something better here.*/
         }
     }
 
-    memcpy(eth_req, replace, sizeof(ETH_WRITE_REQUEST));
-    return ((sim_tailq_item_t) eth_req);
+  /* Copy buffer contents */
+  request->next = NULL;
+  request->packet.len = packet->len;
+  request->packet.used = packet->used;
+  request->packet.status = packet->status;
+  request->packet.crc_len = packet->crc_len;
+  memcpy(request->packet.msg, packet->msg, packet->len);
+  request->next = NULL;
+
+    return ((sim_tailq_item_t) request);
 }
+#endif
 
 t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 #ifdef USE_READER_THREAD
-ETH_WRITE_REQUEST request;
-int write_queue_size;
+sim_atomic_type_t write_queue_size;
 
 /* make sure device exists */
 if ((dev == NULL) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
@@ -3352,18 +3361,9 @@ if (packet->len > sizeof (packet->msg) ||                     /* packet oversize
     sim_atomic_get(&dev->writer_state) != ETH_THREAD_RUNNING) /* no writer thread? */
     return SCPE_IERR;                                         /* that's no good! */
 
-/* Copy buffer contents */
-request.next = NULL;
-request.packet.len = packet->len;
-request.packet.used = packet->used;
-request.packet.status = packet->status;
-request.packet.crc_len = packet->crc_len;
-memcpy(request.packet.msg, packet->msg, packet->len);
-request.next = NULL;
-
 /* Insert buffer at the end of the write list (to make sure that */
 /* packets make it to the wire in the order they were presented here) */
-sim_tailq_enqueue_xform(&dev->write_requests, queue_writer_buffer, &request);
+sim_tailq_enqueue_xform(&dev->write_requests, queue_writer_buffer, packet);
 write_queue_size = sim_tailq_count(&dev->write_requests);
 
 if (write_queue_size > dev->write_queue_peak)
