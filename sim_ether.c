@@ -1938,7 +1938,7 @@ _eth_callback((u_char *)opaque, &header, buf);
 static void *
 _eth_reader(void *arg)
 {
-ETH_DEV* volatile dev = (ETH_DEV*)arg;
+ETH_DEV* volatile dev = (ETH_DEV *) arg;
 int status = 0;
 int sel_ret = 0;
 int do_select = 0;
@@ -1971,6 +1971,11 @@ sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
    thread which, in general, won't be readily yielding the processor
    when this thread needs to run */
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
+
+/* Signal that we've started... */
+pthread_mutex_lock(&dev->startup_mtx);
+pthread_cond_signal(&dev->startup_cond);
+pthread_mutex_unlock(&dev->startup_mtx);
 
 while (dev->handle) {
 #if defined (_WIN32)
@@ -2125,7 +2130,7 @@ return NULL;
 static void *
 _eth_writer(void *arg)
 {
-ETH_DEV* volatile dev = (ETH_DEV*)arg;
+ETH_DEV* volatile dev = (ETH_DEV *) arg;
 ETH_WRITE_REQUEST *request = NULL;
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
@@ -2134,6 +2139,11 @@ ETH_WRITE_REQUEST *request = NULL;
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
 sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
+
+/* Signal that we've started... */
+pthread_mutex_lock(&dev->startup_mtx);
+pthread_cond_signal(&dev->startup_cond);
+pthread_mutex_unlock(&dev->startup_mtx);
 
 pthread_mutex_lock (&dev->writer_lock);
 while (dev->handle) {
@@ -2592,6 +2602,8 @@ dev->dbit = dbit;
 #if defined (USE_READER_THREAD)
 if (1) {
   pthread_attr_t attr;
+  char thr_name[16];
+  const size_t n_thr_name = sizeof(thr_name) / sizeof(char);
 
   ethq_init (&dev->read_queue, 200);         /* initialize FIFO queue */
   pthread_mutex_init (&dev->lock, NULL);
@@ -2610,8 +2622,21 @@ if (1) {
     }
   }
 #endif /* defined(__hpux) */
-  pthread_create (&dev->reader_thread, &attr, _eth_reader, (void *)dev);
-  pthread_create (&dev->writer_thread, &attr, _eth_writer, (void *)dev);
+  pthread_cond_init (&dev->startup_cond, NULL);
+  pthread_mutex_init (&dev->startup_mtx, NULL);
+  pthread_mutex_lock (&dev->startup_mtx);
+  pthread_create (&dev->reader_thread, &attr, _eth_reader, dev);
+  pthread_cond_wait(&dev->startup_cond, &dev->startup_mtx);
+  snprintf(thr_name, n_thr_name - 1, "r: %s", dev->name); 
+  thr_name[n_thr_name - 1] = '\0'; 
+  pthread_setname_np(dev->reader_thread, thr_name);
+  /* pthread_cond_wait() returns with startup_mtx locked. */
+  pthread_create (&dev->writer_thread, &attr, _eth_writer, dev);
+  pthread_cond_wait(&dev->startup_cond, &dev->startup_mtx);
+  snprintf(thr_name, n_thr_name - 1, "w: %s", dev->name); 
+  thr_name[n_thr_name - 1] = '\0'; 
+  pthread_setname_np(dev->writer_thread, thr_name);
+  pthread_mutex_unlock (&dev->startup_mtx);
   pthread_attr_destroy(&attr);
   }
 #endif /* defined (USE_READER_THREAD */
@@ -2672,11 +2697,15 @@ dev->have_host_nic_phy_addr = 0;
 #if defined (USE_READER_THREAD)
 pthread_join (dev->reader_thread, NULL);
 pthread_mutex_destroy (&dev->lock);
+pthread_mutex_lock(&dev->writer_lock);
 pthread_cond_signal (&dev->writer_cond);
+pthread_mutex_unlock(&dev->writer_lock);
 pthread_join (dev->writer_thread, NULL);
 pthread_mutex_destroy (&dev->self_lock);
 pthread_mutex_destroy (&dev->writer_lock);
 pthread_cond_destroy (&dev->writer_cond);
+pthread_mutex_destroy(&dev->startup_mtx);
+pthread_cond_destroy(&dev->startup_cond);
 if (1) {
   ETH_WRITE_REQUEST *buffer;
    while (NULL != (buffer = dev->write_buffers)) {
@@ -3135,7 +3164,6 @@ if (packet->len > sizeof (packet->msg)) /* packet oversized? */
 pthread_mutex_lock (&dev->writer_lock);
 if (NULL != (request = dev->write_buffers))
   dev->write_buffers = request->next;
-pthread_mutex_unlock (&dev->writer_lock);
 if (NULL == request)
   request = (ETH_WRITE_REQUEST *)malloc(sizeof(*request));
 
@@ -3148,7 +3176,6 @@ memcpy(request->packet.msg, packet->msg, packet->len);
 
 /* Insert buffer at the end of the write list (to make sure that */
 /* packets make it to the wire in the order they were presented here) */
-pthread_mutex_lock (&dev->writer_lock);
 request->next = NULL;
 if (dev->write_requests) {
   ETH_WRITE_REQUEST *last_request = dev->write_requests;
@@ -3164,10 +3191,11 @@ else
     dev->write_requests = request;
 if (write_queue_size > dev->write_queue_peak)
   dev->write_queue_peak = write_queue_size;
-pthread_mutex_unlock (&dev->writer_lock);
 
-/* Awaken writer thread to perform actual write */
+/* Awaken writer thread to perform actual write. writer_lock must remain
+ * acquired during the writer_cond signal. */
 pthread_cond_signal (&dev->writer_cond);
+pthread_mutex_unlock (&dev->writer_lock);
 
 /* Return with a status from some prior write */
 if (routine)
