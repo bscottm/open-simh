@@ -119,22 +119,19 @@ uint32 sim_idle_ms_sleep (unsigned int msec);
  * Note 2: These are the minimal set of needed constants. Several are ifdef-ed
  * to reduce compiler "defined but not used" warnings.
  */
-#define NSEC_PER_SEC_l_VALUE   1000000000l
-#define NSEC_PER_SEC_ll_VALUE  1000000000ll
-
-#if (defined(MS_MIN_GRANULARITY) && (MS_MIN_GRANULARITY != 1)) || defined(SIM_ASYNCH_IO)
-static const t_uint64 NSEC_PER_SEC_u64 = 1000000000ull;
-#endif
+#define L_NSEC_PER_SEC_VALUE   1000000000l
+#define LL_NSEC_PER_SEC_VALUE  1000000000ll
 
 #if defined(NEED_CLOCK_GETTIME)
 #  if !defined(_POSIX_SOURCE)
-static const long     NSEC_PER_USEC_l  = NSEC_PER_SEC_l_VALUE / 1000000l;               /* (ns/s) / (us/s). */
+static const long     NSEC_PER_USEC_l  = L_NSEC_PER_SEC_VALUE / 1000000l;               /* (ns/s) / (us/s). */
 #  endif
 #endif
 
-static const t_int64  NSEC_PER_SEC_ll  = NSEC_PER_SEC_ll_VALUE;
-static const long     NSEC_PER_SEC_l   = NSEC_PER_SEC_l_VALUE;
-static const double   NSEC_PER_SEC_d   = 1000000000.0;
+static const t_int64  LL_NSEC_PER_SEC   = LL_NSEC_PER_SEC_VALUE;
+static const t_uint64 ULL_NSEC_PER_SEC  = 1000000000ull;
+static const long      L_NSEC_PER_SEC   = L_NSEC_PER_SEC_VALUE;
+static const double    NSEC_PER_SEC_d   = 1000000000.0;
 
 static const double   USEC_PER_SEC_d   = 1000000.0;
 
@@ -151,8 +148,8 @@ static const double   MSEC_PER_SEC_d   = MSEC_PER_SEC_d_VALUE;
 static const uint32   MSEC_PER_SEC_u32 = MSEC_PER_SEC_u32_VALUE;
 static const uint32   MSEC_PER_SEC_l   = MSEC_PER_SEC_l_VALUE;
 
-static const t_int64  NSEC_PER_MSEC_ll = NSEC_PER_SEC_ll_VALUE / MSEC_PER_SEC_ll_VALUE; /* (ns/s) / (ms/s). */
-static const long     NSEC_PER_MSEC_l  = NSEC_PER_SEC_l_VALUE / MSEC_PER_SEC_l_VALUE;   /* (ns/s) / (ms/s). */
+static const t_int64  NSEC_PER_MSEC_ll = LL_NSEC_PER_SEC_VALUE / MSEC_PER_SEC_ll_VALUE; /* (ns/s) / (ms/s). */
+static const long     NSEC_PER_MSEC_l  = L_NSEC_PER_SEC_VALUE / MSEC_PER_SEC_l_VALUE;   /* (ns/s) / (ms/s). */
 
 /* MS_MIN_GRANULARITY exists here so that timing behavior for hosts systems  */
 /* with slow clock ticks can be assessed and tested without actually having  */
@@ -355,9 +352,9 @@ clock_gettime(CLOCK_REALTIME, &start_time);
 end_time = start_time;
 end_time.tv_sec += msec / MSEC_PER_SEC_u32;
 end_time.tv_nsec += (msec % MSEC_PER_SEC_u32) * NSEC_PER_MSEC_l;
-if (end_time.tv_nsec >= NSEC_PER_SEC_l) {
-    end_time.tv_sec += end_time.tv_nsec / NSEC_PER_SEC_u64;
-    end_time.tv_nsec = end_time.tv_nsec % NSEC_PER_SEC_l;
+if (end_time.tv_nsec >= L_NSEC_PER_SEC) {
+    end_time.tv_sec += end_time.tv_nsec / L_NSEC_PER_SEC;
+    end_time.tv_nsec = end_time.tv_nsec % L_NSEC_PER_SEC;
     }
 pthread_mutex_lock (&sim_asynch_lock);
 sim_idle_wait = TRUE;
@@ -537,25 +534,26 @@ static HANDLE timerHandle = NULL;
 typedef void (WINAPI * WinSystemTimeFunc) (FILETIME *lpTime);
 static WinSystemTimeFunc winSysTimeFunc = NULL;
 
-/* FILETIME returns "ticks", which are 100ns. */
-static const ULONGLONG NSEC_PER_TICK_ll = 100ll;
+/* FILETIME returns 100 ns "ticks". */
+static const ULONGLONG ULL_NSEC_PER_TICK = 100ull;
+static const  LONGLONG  LL_NSEC_PER_TICK = 100ll;
 
 /* Return Windows' system time in nsec. Why nanoseconds? It's Windows' preferred
  * time units and can be converted to msec or usec when needed. */
 static inline ULONGLONG win32_getsystemtime()
 {
 /* Between 1601-01-01 and 1970-01-01 there were 280 normal years and 89 leap
-   years, in total 134774 days. (note from gnulib gettimeofday().)*/
-const ULONGLONG UNIX_TIME_START = (134774ull * (24ull * 60ull * 60ull) * NSEC_PER_SEC_ll) / NSEC_PER_TICK_ll;
-FILETIME ft;
-ULARGE_INTEGER li;
+   years. (note from gnulib gettimeofday().)*/
+const ULONGLONG UNIX_TIME_START = (280ull * 365ull + 89ull * 366ull) * (24ull * 60ull * 60ull) * ULL_NSEC_PER_SEC;
+FILETIME ftime;
+ULARGE_INTEGER nsec_time;
 
-winSysTimeFunc(&ft);                                    /* returns ticks in UTC */
+winSysTimeFunc(&ftime);                                    /* returns ticks in UTC */
 
-li.LowPart = ft.dwLowDateTime;
-li.HighPart = ft.dwHighDateTime;
+nsec_time.LowPart = ftime.dwLowDateTime;
+nsec_time.HighPart = ftime.dwHighDateTime;
 
-return (li.QuadPart - UNIX_TIME_START) * NSEC_PER_TICK_ll;
+return (nsec_time.QuadPart * ULL_NSEC_PER_TICK) - UNIX_TIME_START;
 }
 
 uint32 sim_os_msec (void)
@@ -614,12 +612,13 @@ else {
      <https://docs.microsoft.com/en-us/windows/desktop/api/sysinfoapi/nf-sysinfoapi-getsystemtimepreciseasfiletime>.
 
   GetSystemTimeAsFileTime produces values that jump by increments of 15.627
-  milliseconds (!) on average. Whereas GetSystemTimePreciseAsFileTime values
+  milliseconds (!) on average, whereas GetSystemTimePreciseAsFileTime values
   usually jump by 1 or 2 microseconds.
 
   In depth discussion: <http://www.windowstimestamp.com/description>
 */
 if (winSysTimeFunc == NULL) {
+#if 0
     HMODULE kernel32 = LoadLibraryA ("kernel32.dll");
     if (kernel32 != NULL) {
         winSysTimeFunc = (WinSystemTimeFunc) GetProcAddress (kernel32, "GetSystemTimePreciseAsFileTime");
@@ -627,6 +626,10 @@ if (winSysTimeFunc == NULL) {
 
     if (winSysTimeFunc == NULL)
         winSysTimeFunc = (WinSystemTimeFunc) GetSystemTimeAsFileTime;
+#else
+    HMODULE kernel32 = LoadLibraryA ("kernel32.dll");
+    winSysTimeFunc = (WinSystemTimeFunc) GetProcAddress (kernel32, "GetSystemTimeAsFileTime");
+#endif
     }
 
 /* Waitable timers are supposed to have better granularity via
@@ -650,7 +653,7 @@ if (timerHandle != NULL) {
     /* The waitable timer's delay is in 100ns ticks, like the FILETIME structure.
      * Hence the extra NSEC_PER_TICK correction value; let the compiler elide the
      * constants. */
-    msec_delay_from_now.QuadPart = -((LONGLONG) msec) * (NSEC_PER_MSEC_ll / NSEC_PER_TICK_ll);
+    msec_delay_from_now.QuadPart = -((LONGLONG) msec) * (NSEC_PER_MSEC_ll / LL_NSEC_PER_TICK);
     SetWaitableTimer(timerHandle, &msec_delay_from_now, 0, NULL, NULL, FALSE);
     /* It's gonna return when the timer expires, but WaitForSingleObject()
      * requires a timeout value. */
@@ -674,8 +677,8 @@ if (clk_id == CLOCK_REALTIME) {
     /* Most likely branch. */
     ULONGLONG now = win32_getsystemtime();
 
-    tp->tv_sec = now / NSEC_PER_SEC_ll;
-    tp->tv_nsec = (long) (now % NSEC_PER_SEC_ll);
+    tp->tv_sec = now / ULL_NSEC_PER_SEC;
+    tp->tv_nsec = (long) (now % ULL_NSEC_PER_SEC);
     return 0;
     }
 
@@ -800,14 +803,14 @@ sim_timespec_diff (struct timespec *diff, const struct timespec *min, const stru
 /* Borrow as needed for the nsec value */
 while (sub->tv_nsec > diff->tv_nsec) {
     --diff->tv_sec;
-    diff->tv_nsec += NSEC_PER_SEC_l;
+    diff->tv_nsec += L_NSEC_PER_SEC;
     }
 diff->tv_nsec -= sub->tv_nsec;
 diff->tv_sec -= sub->tv_sec;
 /* Normalize the result */
-while (diff->tv_nsec >= NSEC_PER_SEC_l) {
+while (diff->tv_nsec >= L_NSEC_PER_SEC) {
     ++diff->tv_sec;
-    diff->tv_nsec -= NSEC_PER_SEC_l;
+    diff->tv_nsec -= L_NSEC_PER_SEC;
     }
 }
 
@@ -827,12 +830,12 @@ static t_bool _sim_wallclock_is_active (UNIT *uptr);
 
 static int sim_timespec_compare (struct timespec *a, struct timespec *b)
 {
-while (a->tv_nsec >= NSEC_PER_SEC_l) {
-    a->tv_nsec -= NSEC_PER_SEC_l;
+while (a->tv_nsec >= L_NSEC_PER_SEC) {
+    a->tv_nsec -= L_NSEC_PER_SEC;
     ++a->tv_sec;
     }
-while (b->tv_nsec >= NSEC_PER_SEC_l) {
-    b->tv_nsec -= NSEC_PER_SEC_l;
+while (b->tv_nsec >= L_NSEC_PER_SEC) {
+    b->tv_nsec -= L_NSEC_PER_SEC;
     ++b->tv_sec;
     }
 if (a->tv_sec < b->tv_sec)
@@ -2869,7 +2872,7 @@ return SCPE_OK;
 double sim_timer_inst_per_sec (void)
 {
 double inst_per_sec = sim_inst_per_sec_last;
-RTC *rtc;
+const RTC *rtc;
 
 if (sim_calb_tmr == INVALID_TIMER)
     return inst_per_sec;
@@ -3412,7 +3415,7 @@ return -1;                                          /* Not found. */
 double sim_timer_activate_time_usecs (UNIT *uptr)
 {
 UNIT *cptr;
-int32 tmr;
+size_t tmr;
 double result = -1.0;
 
 /* If this is a clock unit, we need to return the related clock assist unit instead */
