@@ -247,24 +247,49 @@ typedef void (*ETH_PCALLBACK)(int status);
 typedef struct eth_list ETH_LIST;
 typedef struct eth_queue ETH_QUE;
 typedef struct eth_item ETH_ITEM;
-struct eth_write_request {
+typedef struct eth_write_request {
   struct eth_write_request *next;
   ETH_PACK packet;
-  };
-typedef struct eth_write_request ETH_WRITE_REQUEST;
+} ETH_WRITE_REQUEST;
+
+typedef enum {
+  ETH_API_NONE,                                        /* No API in use yet */
+  ETH_API_PCAP,                                        /* Pcap API in use */
+  ETH_API_TAP,                                         /* tun/tap API in use */
+  ETH_API_VDE,                                         /* VDE API in use */
+  ETH_API_UDP,                                         /* UDP API in use */
+  ETH_API_NAT                                          /* NAT (SLiRP) API in use */
+} eth_api_t;
+
+#if defined(USE_READER_THREAD)
+/* Ethernet reader and writer thread states.
+ * - ETH_THREAD_INIT is the initial state before the thread is created.
+ * - Prior to signaling the startup condition variables:
+ *   - The reader thread changes its state to ETH_THREAD_RUNNING
+ *   - The writer thread changes its state to ETH_THREAD_IDLE while waiting
+ *     on the writer's condition variable, ETH_THREAD_RUNNING while processing
+ *     outbound packets.
+ * - Once the startup condition variable is signaled, the threads enter their
+ *   respective work loops.
+ * - The main SIMH thread will set the threads' status to ETH_THREAD_SHUTDOWN
+ *    to notify the threads to exit their work loops, do whatever cleanup is
+ *    needed and exit the function.
+ */
+typedef enum {
+  ETH_THREAD_INIT,                                     /* Thread's initial state */
+  ETH_THREAD_RUNNING,                                  /* Thread is running */
+  ETH_THREAD_IDLE,                                     /* Thread is running, but idle (waiting)*/
+  ETH_THREAD_SHUTDOWN,                                 /* Thread needs to shut down. */
+  ETH_THREAD_TERMINATED                                /* Thread terminated. */
+} eth_thr_status_t;
+#endif
 
 struct eth_device {
   char*         name;                                   /* name of ethernet device */
   void*         handle;                                 /* handle of implementation-specific device */
   SOCKET        fd_handle;                              /* fd to kernel device (where needed) */
   char*         bpf_filter;                             /* bpf filter currently in effect */
-  int           eth_api;                                /* Designator for which API is being used to move packets */
-#define ETH_API_NONE 0                                  /* No API in use yet */
-#define ETH_API_PCAP 1                                  /* Pcap API in use */
-#define ETH_API_TAP  2                                  /* tun/tap API in use */
-#define ETH_API_VDE  3                                  /* VDE API in use */
-#define ETH_API_UDP  4                                  /* UDP API in use */
-#define ETH_API_NAT  5                                  /* NAT (SLiRP) API in use */
+  eth_api_t     eth_api;                                /* Designator for which API is being used to move packets */
   ETH_PCALLBACK read_callback;                          /* read callback function */
   ETH_PCALLBACK write_callback;                         /* write callback function */
   ETH_PACK*     read_packet;                            /* read packet */
@@ -316,7 +341,9 @@ struct eth_device {
   ETH_QUE       read_queue;
   pthread_mutex_t     lock;
   pthread_t     reader_thread;                          /* Reader Thread Id */
+  eth_thr_status_t reader_status;                       /* Reader thread status */
   pthread_t     writer_thread;                          /* Writer Thread Id */
+  eth_thr_status_t writer_status;                       /* Writer thread status */
   pthread_mutex_t     writer_lock;
   pthread_mutex_t     self_lock;
   pthread_cond_t      writer_cond;
@@ -324,6 +351,10 @@ struct eth_device {
   int write_queue_peak;
   ETH_WRITE_REQUEST *write_buffers;
   t_stat write_status;
+
+  /* Thread startup state. */
+  pthread_mutex_t startup_mtx;
+  pthread_cond_t  startup_cond;
 #endif
 };
 

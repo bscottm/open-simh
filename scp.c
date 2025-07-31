@@ -466,8 +466,10 @@ AIO_IUNLOCK;
 
 if (sim_idle_wait) {
     sim_debug (TIMER_DBG_IDLE, &sim_timer_dev, "waking due to event on %s after %d %s\n", sim_uname(uptr), event_time, sim_vm_interval_units);
+    /* sim_asynch_lock must remain acquired during the condition signal. */
     pthread_cond_signal (&sim_asynch_wake);
     }
+AIO_IUNLOCK;
 }
 #else
 t_bool sim_asynch_enabled = FALSE;
