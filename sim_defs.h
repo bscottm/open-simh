@@ -1616,9 +1616,9 @@ static SIM_INLINE void sim_store_atomic(sim_atomic_t *dest, sim_atomic_t src)
         (void)__sync_lock_test_and_set(dest, src);
 #    endif
 #  elif defined(_WIN32)
-        return  InterlockedExchange(dest, src);
+        InterlockedExchange(dest, src);
 #  elif defined(__DECC_VER)
-        return _InterlockedExchange(dest, src);
+        _InterlockedExchange(dest, src);
 #  endif
 #else
     /* No asynchronous I/O or mutex-only. */

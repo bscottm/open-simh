@@ -11997,8 +11997,6 @@ else
     sim_interval_catchup = 0;
 do {
     uptr = sim_clock_queue;                             /* get first */
-    if (!AIO_MAIN_THREAD)
-        sim_messagef(SCPE_OK, "assign sim_clock_queue outside main thread.\n");
     sim_clock_queue = uptr->next;                       /* remove first */
     uptr->next = NULL;                                  /* hygiene */
     uptr->time = 0;
@@ -12102,8 +12100,6 @@ for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
     }
 if (prvptr == NULL) {                                   /* insert at head */
     cptr = uptr->next = sim_clock_queue;
-    if (!AIO_MAIN_THREAD)
-        sim_messagef(SCPE_OK, "assign sim_clock_queue outside main thread.\n");
     sim_clock_queue = uptr;
     }
 else {
@@ -12230,8 +12226,6 @@ sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Canceling Event for %s\n", sim_uname(up
 nptr = QUEUE_LIST_END;
 
 if (sim_clock_queue == uptr) {
-    if (!AIO_MAIN_THREAD)
-        sim_messagef(SCPE_OK, "assign sim_clock_queue outside main thread.\n");
     nptr = sim_clock_queue = uptr->next;
     uptr->next = NULL;                                  /* hygiene */
     }
