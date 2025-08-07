@@ -2960,6 +2960,12 @@ switch (dev->eth_api) {
   case ETH_API_NAT:
       netname = "nat";
       break;
+  case ETH_API_NONE:
+      netname = "(none)";
+      break;
+  default:
+      netname = "(unknown)";
+      break;
   }
 sprintf(msg, "%s(%s): ", where, netname);
 switch (dev->eth_api) {
