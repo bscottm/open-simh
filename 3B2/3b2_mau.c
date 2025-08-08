@@ -1797,7 +1797,7 @@ void xfp_to_decimal(XFP *a, DEC *d, RM rounding_mode)
 {
     t_int64 tmp;
     int i;
-    t_bool sign;
+    uint32 sign;
     uint16 digits[19] = {0};
 
     tmp = xfp_to_int64(a, rounding_mode);
@@ -1848,7 +1848,7 @@ void xfp_to_decimal(XFP *a, DEC *d, RM rounding_mode)
 void mau_decimal_to_xfp(DEC *d, XFP *a)
 {
     int i;
-    t_bool sign;
+    uint32 sign;
     uint16 digits[18] = {0};
     t_uint64 multiplier = 1;
     t_uint64 tmp;

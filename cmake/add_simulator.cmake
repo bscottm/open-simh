@@ -193,6 +193,7 @@ function (simh_executable_template _targ)
     set_target_properties(${_targ} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${SIMH_LEGACY_INSTALL}
     )
+    ## Compiler should minimally support C99.
     target_compile_features(${_targ} PRIVATE c_std_99)
     target_compile_options(${_targ} PRIVATE ${EXTRA_TARGET_CFLAGS})
     target_link_options(${_targ} PRIVATE ${EXTRA_TARGET_LFLAGS})
