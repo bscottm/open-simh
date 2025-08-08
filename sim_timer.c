@@ -2957,7 +2957,8 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
 #if defined(SIM_ASYNCH_CLOCKS)
     if ((sim_asynch_timer) && (usec_delay > sim_idle_rate_ms * 1000.0)) {
         double d_now = sim_timenow_double();
-        UNIT *cptr, *prvptr;
+        UNIT *prvptr;
+        unit_aio_list_t cptr;
 
         uptr->a_usec_delay = usec_delay;
         uptr->a_due_time = d_now + (usec_delay / USEC_PER_SEC_d);
@@ -2978,7 +2979,7 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
         for (cptr = sim_wallclock_queue, prvptr = NULL; cptr != QUEUE_LIST_END; cptr = cptr->a_next) {
             if (uptr->a_due_time < cptr->a_due_time)
                 break;
-            prvptr = cptr;
+            prvptr = unit_ptr_load_atomic(&cptr);
         }
         if (prvptr == NULL) {              /* inserting at head */
             uptr->a_next = QUEUE_LIST_END; /* Temporarily mark as active */
@@ -2986,7 +2987,8 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
                 while (sim_wallclock_entry) { /* wait for any prior entry has been digested */
                     sim_debug(DBG_TIM, &sim_timer_dev,
                               "sim_timer_activate_after(%s, %.0f usecs) - queue insert entry %s busy waiting for 1ms\n",
-                              sim_uname(uptr), usec_delay, sim_uname(sim_wallclock_entry));
+                              sim_uname(uptr), usec_delay,
+                              sim_uname(unit_ptr_load_atomic(&sim_wallclock_entry)));
                     pthread_mutex_unlock(&sim_timer_lock);
                     sim_os_ms_sleep(1);
                     pthread_mutex_lock(&sim_timer_lock);
