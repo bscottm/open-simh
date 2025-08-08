@@ -3229,7 +3229,8 @@ memcpy(request->packet.msg, packet->msg, packet->len);
 /* packets make it to the wire in the order they were presented here) */
 request->next = NULL;
 
-ETH_WRITE_REQUEST *last_request = &dev->write_requests;
+ETH_WRITE_REQUEST **last_request = &dev->write_requests;
+int write_queue_size = 0;
 
 while (*last_request != NULL) {
   last_request = &(*last_request)->next;
