@@ -3401,7 +3401,7 @@ memcpy(request->packet.msg, packet->msg, packet->len);
 /* Insert buffer at the end of the write list (to make sure that */
 /* packets make it to the wire in the order they were presented here) */
 {
-  int write_queue_size = 1;
+  int write_queue_size = 0;
   ETH_WRITE_REQUEST **last_request = &dev->write_requests;
 
   while (*last_request != NULL) {
@@ -3409,25 +3409,16 @@ memcpy(request->packet.msg, packet->msg, packet->len);
     ++write_queue_size;
     }
   *last_request = request;
+  ++write_queue_size;
   if (write_queue_size > dev->write_queue_peak)
     dev->write_queue_peak = write_queue_size;
-  }
-<<<<<<< HEAD
-/* Awaken writer thread to perform actual write. writer_lock must remain
- * acquired during the writer_cond signal. */
-pthread_cond_signal (&dev->writer_cond);
-=======
-else
-    dev->write_requests = request;
-if (write_queue_size > dev->write_queue_peak)
-  dev->write_queue_peak = write_queue_size;
+}
 
 if (dev->writer_status == ETH_THREAD_IDLE) {
   /* Awaken writer thread to perform actual write. writer_lock must remain
    * acquired during the writer_cond signal. */
   pthread_cond_signal (&dev->writer_cond);
   }
->>>>>>> d8588043 (ETH: Refactor _eth_reader(), thread states)
 pthread_mutex_unlock (&dev->writer_lock);
 
 /* Return with a status from some prior write */
