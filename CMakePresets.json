@@ -1,0 +1,121 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "win32-vs2022-common",
+      "displayName": "Common settings across all Windows configurations",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/cmake/build-vs2022",
+      "architecture": "Win32",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "win32-vs2022-debug",
+      "displayName": "Win32 VS-2022 (Debug)",
+      "inherits": "win32-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "win32-vs2022-relwithdebinfo",
+      "displayName": "Win32 VS-2022 (RelWithDebInfo)",
+      "inherits": "win32-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "win32-vs2022-release",
+      "displayName": "Win32 VS-2022 (Release)",
+      "inherits": "win32-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "win64-vs2022-common",
+      "displayName": "Common settings across all Windows configurations",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/cmake/build-vs2022",
+      "architecture": "x64"
+    },
+    {
+      "name": "win64-vs2022-debug",
+      "displayName": "Win64 VS-2022 (Debug)",
+      "inherits": "win64-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "win64-vs2022-relwithdebinfo",
+      "displayName": "Win64 VS-2022 (RelWithDebInfo)",
+      "inherits": "win64-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "win64-vs2022-release",
+      "displayName": "Win64 VS-2022 (Release)",
+      "inherits": "win64-vs2022-common",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win32-vs2022-debug",
+      "displayName": "Build Win32 VS-2022 (Debug)",
+      "configurePreset": "win32-vs2022-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "win32-vs2022-relwithdebinfo",
+      "displayName": "Build Win32 VS-2022 (RelWithDebInfo)",
+      "configurePreset": "win32-vs2022-relwithdebinfo",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "win32-vs2022-release",
+      "displayName": "Build Win32 VS-2022 (Release)",
+      "configurePreset": "win32-vs2022-release",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "win32-vs2022-debug",
+      "configurePreset": "win32-vs2022-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "win32-vs2022-relwithdebinfo",
+      "configurePreset": "win32-vs2022-relwithdebinfo",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "win32-vs2022-release",
+      "configurePreset": "win32-vs2022-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
+
