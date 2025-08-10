@@ -1981,7 +1981,7 @@ t_stat xq_process_turbo_xbdl(CTLR* xq)
 t_stat xq_process_loopback(CTLR* xq, ETH_PACK* pack)
 {
   ETH_PACK  response;
-  ETH_MAC   *physical_address;
+  unsigned char *physical_address;
   t_stat    status;
   int offset   = 16 + (pack->msg[14] | (pack->msg[15] << 8));
   int function;
@@ -1998,12 +1998,12 @@ t_stat xq_process_loopback(CTLR* xq, ETH_PACK* pack)
   /* create forward response packet */
   memcpy (&response, pack, sizeof(ETH_PACK));
   if (xq->var->mode == XQ_T_DELQA_PLUS)
-    physical_address = &xq->var->init.phys;
+    physical_address = xq->var->init.phys;
   else
       if (xq->var->setup.valid)
-        physical_address = &xq->var->setup.macs[0];
+        physical_address = xq->var->setup.macs[0];
       else
-        physical_address = &xq->var->mac;
+        physical_address = xq->var->mac;
 
   /* The only packets we should be responding to are ones which 
      we received due to them being directed to our physical MAC address, 
@@ -2011,11 +2011,11 @@ t_stat xq_process_loopback(CTLR* xq, ETH_PACK* pack)
      (we may receive others if we're in promiscuous mode, but shouldn't 
      respond to them) */
   if ((0 == (pack->msg[0]&1)) &&           /* Multicast or Broadcast */
-      (0 != eth_mac_cmp(*physical_address, pack->msg)))
+      (0 != eth_mac_cmp(physical_address, pack->msg)))
       return SCPE_NOFNC;
 
   eth_copy_mac (&response.msg[0], &response.msg[offset+2]);
-  eth_copy_mac (&response.msg[6], *physical_address);
+  eth_copy_mac (&response.msg[6], physical_address);
   offset += 8 - 16; /* Account for the Ethernet Header and Offset value in this number  */
   response.msg[14] = offset & 0xFF;
   response.msg[15] = (offset >> 8) & 0xFF;
