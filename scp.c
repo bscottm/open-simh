@@ -419,7 +419,7 @@ static SIM_INLINE unit_aio_list_t aio_queue_worklist()
  */
 static SIM_INLINE void aio_enqueue_unit(UNIT *unit)
 {
-    UNIT *q;
+    UNIT *q, *unit_next;
     t_bool did_xchg;
 
     do {
@@ -438,10 +438,10 @@ int migrated = 0;
 AIO_ILOCK;
 if (!AIO_QUEUE_EMPTY()) {
     unit_aio_list_t q;
-    UNIT *uptr;
     int32 a_event_time;
     for (q = aio_queue_worklist(); q != QUEUE_LIST_END; /* empty */) {
-        uptr = unit_ptr_load_atomic(&q);
+        unit_aio_list_t uptr = q;
+
         sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Migrating Asynch event for %s after %d %s\n",
                    sim_uname(uptr), uptr->a_event_time, sim_vm_interval_units);
         ++migrated;
@@ -457,7 +457,7 @@ if (!AIO_QUEUE_EMPTY()) {
 
         uptr->a_activate_call (uptr, a_event_time);
 
-        if (uptr->a_check_completion) {
+        if (uptr->a_check_completion != NULL) {
             sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Calling Completion Check for asynch event on %s\n", sim_uname(uptr));
             uptr->a_check_completion (uptr);
             }
