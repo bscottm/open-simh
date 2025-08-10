@@ -1292,7 +1292,7 @@ static SIM_INLINE t_bool sim_ptr_cmpxchg(SIM_ATOMIC_PTR(void) *dest, void *src, 
         /* C11/C23 atomics: */
         void *temp = current;
 
-        return atomic_compare_exchange_strong((_Atomic(void*) *) dest, &temp, src);
+        return atomic_compare_exchange_strong(dest, &temp, src);
 #  elif defined(__GNUC__)
 #    if defined(__has_builtin)
 #      if __has_builtin(__atomic_compare_exchange)
@@ -1334,7 +1334,7 @@ static SIM_INLINE void sim_ptr_store_atomic(SIM_ATOMIC_PTR(void) *dest, void *sr
         /* C11/C23 atomics: */
         void *temp = src;
 
-        atomic_store_explicit((_Atomic(void*) *) dest, &temp, memory_order_seq_cst);
+        atomic_store_explicit(dest, temp, memory_order_seq_cst);
 #  elif defined(__GNUC__)
 #    if defined(__has_builtin)
 #      if __has_builtin(__atomic_store_n)
