@@ -2990,6 +2990,7 @@ uint32 i;
 int responses = 0;
 uint32 offset, function;
 char mac_string[32];
+ETH_MAC filter_mac[1];
 
 if (reflections)
     *reflections = 0;
@@ -3080,7 +3081,8 @@ eth_copy_mac(&send.msg[18], mac);                       /* Forward Destination *
 send.msg[24] = 1;                                       /* Reply */
 send.msg[25] = 0;
 
-eth_filter(dev, 1, (ETH_MAC *)mac, 0, 0);
+eth_copy_mac(filter_mac[0], mac);                       /* target address */
+eth_filter(dev, 1, filter_mac, 0, 0);
 
 /* send the packet */
 status = _eth_write (dev, &send, NULL);
@@ -3289,6 +3291,9 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
 
     /* dispatch write request (synchronous; no need to save write info to dev) */
   switch (dev->eth_api) {
+    case ETH_API_NONE:
+      status = 1;
+      break;
 #ifdef HAVE_PCAP_NETWORK
     case ETH_API_PCAP:
       status = pcap_sendpacket((pcap_t*)dev->handle, (u_char*)packet->msg, packet->len);
@@ -3441,7 +3446,7 @@ return (hash[key>>3] & (1 << (key&0x7)));
 
 #if 0
 static int
-_eth_hash_validate(ETH_MAC *MultiCastList, int count, ETH_MULTIHASH hash)
+_eth_hash_validate(ETH_MAC *MultiCastList[], int count, ETH_MULTIHASH hash)
 {
 ETH_MULTIHASH lhash;
 int i;
