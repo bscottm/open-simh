@@ -434,33 +434,31 @@ static SIM_INLINE void aio_enqueue_unit(UNIT *unit)
 int sim_aio_update_queue (void)
 {
 int migrated = 0;
+unit_aio_list_t q;
+int32 a_event_time;
 
 AIO_ILOCK;
-if (!AIO_QUEUE_EMPTY()) {
-    unit_aio_list_t q;
-    int32 a_event_time;
-    for (q = aio_queue_worklist(); q != QUEUE_LIST_END; /* empty */) {
-        unit_aio_list_t uptr = q;
+for (q = aio_queue_worklist(); q != QUEUE_LIST_END; /* empty */) {
+    UNIT *uptr = unit_ptr_load_atomic(&q);
 
-        sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Migrating Asynch event for %s after %d %s\n",
-                   sim_uname(uptr), uptr->a_event_time, sim_vm_interval_units);
-        ++migrated;
-        q = q->a_next;
-        unit_ptr_store_atomic(&uptr->a_next, NULL);          /* hygiene */
-        if (uptr->a_activate_call != &sim_activate_notbefore) {
-            a_event_time = uptr->a_event_time - ((sim_asynch_inst_latency + 1) / 2);
-            if (a_event_time < 0)
-                a_event_time = 0;
-            }
-        else
-            a_event_time = uptr->a_event_time;
+    sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Migrating Asynch event for %s after %d %s\n",
+               sim_uname(uptr), uptr->a_event_time, sim_vm_interval_units);
+    ++migrated;
+    q = q->a_next;
+    unit_ptr_store_atomic(&uptr->a_next, NULL);          /* hygiene */
+    if (uptr->a_activate_call != &sim_activate_notbefore) {
+        a_event_time = uptr->a_event_time - ((sim_asynch_inst_latency + 1) / 2);
+        if (a_event_time < 0)
+            a_event_time = 0;
+        }
+    else
+        a_event_time = uptr->a_event_time;
 
-        uptr->a_activate_call (uptr, a_event_time);
+    uptr->a_activate_call (uptr, a_event_time);
 
-        if (uptr->a_check_completion != NULL) {
-            sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Calling Completion Check for asynch event on %s\n", sim_uname(uptr));
-            uptr->a_check_completion (uptr);
-            }
+    if (uptr->a_check_completion != NULL) {
+        sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Calling Completion Check for asynch event on %s\n", sim_uname(uptr));
+        uptr->a_check_completion (uptr);
         }
     }
 AIO_IUNLOCK;
