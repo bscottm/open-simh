@@ -1296,9 +1296,9 @@ static SIM_INLINE t_bool sim_ptr_cmpxchg(SIM_ATOMIC_PTR(void) *dest, void *src, 
 #  elif defined(__GNUC__)
 #    if defined(__has_builtin)
 #      if __has_builtin(__atomic_compare_exchange)
-        void *temp = current;
+        volatile void *temp = current;
 
-        return __atomic_compare_exchange(dest, &temp, &src, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return __atomic_compare_exchange_n(dest, &temp, src, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 #      else
         /* Assume it's GCC or Clang from an older and simpler time... */
         void *temp = current;
@@ -1306,9 +1306,9 @@ static SIM_INLINE t_bool sim_ptr_cmpxchg(SIM_ATOMIC_PTR(void) *dest, void *src, 
         return __sync_bool_compare_and_swap(dest, temp, src);
 #      endif
 #    else
-        void *temp = current;
+        volatile void *temp = current;
 
-        return __atomic_compare_exchange(dest, &temp, &src, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return __atomic_compare_exchange_n((void **) dest, &temp, src, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 #    endif
 #  elif defined(_MSC_VER)
         void *temp = current;
