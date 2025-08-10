@@ -1991,6 +1991,9 @@ _eth_callback((u_char *)opaque, &header, buf);
 #endif
 
 #if defined (USE_READER_THREAD)
+/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+ * Forward declarations and thread argument info.
+ *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
 static int queue_pcap_packet(const ETH_DEV *dev);
 static int queue_tap_packet(const ETH_DEV *dev);
@@ -1998,14 +2001,31 @@ static int queue_vde_packet(const ETH_DEV *dev);
 static int queue_udp_packet(const ETH_DEV *dev);
 static int queue_slirp_packet(const ETH_DEV *dev);
 
+/* Additional information passed to thread. macOS has to be different -- can only set the
+ * thread name from within the thread itself. Other pthread implementations allow the
+ * thread name to be set from the parent. */
+typedef struct {
+  /* The Ethernet device UNIT */
+  ETH_DEV *eth_device;
+  /* Thread name, e.g., "r: nat:..." */
+  char thr_name[16];
+} eth_thread_info_t;
+
 static void *
 _eth_reader(void *arg)
 {
-ETH_DEV *dev = (ETH_DEV *) arg;
+eth_thread_info_t *thr_info = (eth_thread_info_t *) arg;
+ETH_DEV *dev;
 int status = 0;
 int (*queue_func)(const ETH_DEV *);
 
 sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
+dev = thr_info->eth_device;
+#if !defined(__APPLE__)
+pthread_setname_np(pthread_self(), thr_info->thr_name);
+#else
+pthread_setname_np(thr_info->thr_name);
+#endif
 dev->reader_status = ETH_THREAD_RUNNING;
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
@@ -2207,7 +2227,8 @@ return -1;
 static void *
 _eth_writer(void *arg)
 {
-ETH_DEV* volatile dev = (ETH_DEV *) arg;
+eth_thread_info_t *thr_info = (eth_thread_info_t *) arg;
+ETH_DEV *dev;
 ETH_WRITE_REQUEST *request = NULL;
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
@@ -2216,6 +2237,12 @@ ETH_WRITE_REQUEST *request = NULL;
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
 sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
+dev = thr_info->eth_device;
+#if !defined(__APPLE__)
+pthread_setname_np(pthread_self(), thr_info->thr_name);
+#else
+pthread_setname_np(thr_info->thr_name);
+#endif
 dev->writer_status = ETH_THREAD_IDLE;
 
 /* Signal that we've started... */
@@ -2768,8 +2795,8 @@ dev->dbit = dbit;
 #if defined (USE_READER_THREAD)
 if (1) {
   pthread_attr_t attr;
-  char thr_name[16];
-  const size_t n_thr_name = sizeof(thr_name) / sizeof(char);
+  eth_thread_info_t thr_info;
+  const size_t n_thr_name = sizeof(((eth_thread_info_t *) 0)->thr_name) / sizeof(char);
 
   ethq_init (&dev->read_queue, 200);         /* initialize FIFO queue */
   dev->reader_status = dev->writer_status = ETH_THREAD_INIT;
@@ -2777,6 +2804,7 @@ if (1) {
   pthread_mutex_init (&dev->lock, NULL);
   pthread_mutex_init (&dev->writer_lock, NULL);
   pthread_mutex_init (&dev->self_lock, NULL);
+
   pthread_cond_init (&dev->writer_cond, NULL);
   pthread_attr_init(&attr);
   pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
@@ -2790,22 +2818,27 @@ if (1) {
     }
   }
 #endif /* defined(__hpux) */
+
   pthread_cond_init (&dev->startup_cond, NULL);
   pthread_mutex_init (&dev->startup_mtx, NULL);
 
+  /* Set up thread info. Note that the parent waits until signaled,
+   * which means the child thread needs to copy this data before
+   * signaling. */
+  thr_info.eth_device = dev;
+  snprintf(thr_info.thr_name, n_thr_name - 1, "r: %s", dev->name); 
+  thr_info.thr_name[n_thr_name - 1] = '\0'; 
+
   pthread_mutex_lock (&dev->startup_mtx);
-  pthread_create (&dev->reader_thread, &attr, _eth_reader, dev);
+  pthread_create (&dev->reader_thread, &attr, _eth_reader, &thr_info);
   pthread_cond_wait(&dev->startup_cond, &dev->startup_mtx);
-  snprintf(thr_name, n_thr_name - 1, "r: %s", dev->name); 
-  thr_name[n_thr_name - 1] = '\0'; 
-  pthread_setname_np(dev->reader_thread, thr_name);
 
   /* pthread_cond_wait() returns with startup_mtx locked. */
-  pthread_create (&dev->writer_thread, &attr, _eth_writer, dev);
+  snprintf(thr_info.thr_name, n_thr_name - 1, "w: %s", dev->name); 
+  thr_info.thr_name[n_thr_name - 1] = '\0'; 
+
+  pthread_create (&dev->writer_thread, &attr, _eth_writer, &thr_info);
   pthread_cond_wait(&dev->startup_cond, &dev->startup_mtx);
-  snprintf(thr_name, n_thr_name - 1, "w: %s", dev->name); 
-  thr_name[n_thr_name - 1] = '\0'; 
-  pthread_setname_np(dev->writer_thread, thr_name);
   pthread_mutex_unlock (&dev->startup_mtx);
 
   pthread_attr_destroy(&attr);
@@ -3294,18 +3327,22 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
     case ETH_API_NONE:
       status = 1;
       break;
-#ifdef HAVE_PCAP_NETWORK
     case ETH_API_PCAP:
+#ifdef HAVE_PCAP_NETWORK
       status = pcap_sendpacket((pcap_t*)dev->handle, (u_char*)packet->msg, packet->len);
-      break;
+#else
+      status = 1;
 #endif
-#ifdef HAVE_TAP_NETWORK
+      break;
     case ETH_API_TAP:
+#ifdef HAVE_TAP_NETWORK
       status = (((int)packet->len == write(dev->fd_handle, (void *)packet->msg, packet->len)) ? 0 : -1);
-      break;
+#else
+      status = 1;
 #endif
-#ifdef HAVE_VDE_NETWORK
+      break;
     case ETH_API_VDE:
+#ifdef HAVE_VDE_NETWORK
       status = vde_send((VDECONN*)dev->handle, (void *)packet->msg, packet->len, 0);
       if ((status == (int)packet->len) || (status == 0))
         status = 0;
@@ -3314,17 +3351,21 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
           status = 0;
         else
           status = 1;
-      break;
+#else
+      status = 1;
 #endif
-#ifdef HAVE_SLIRP_NETWORK
+      break;
     case ETH_API_NAT:
+#ifdef HAVE_SLIRP_NETWORK
       status = sim_slirp_send((SLIRP*)dev->handle, (char *)packet->msg, (size_t)packet->len, 0);
       if ((status == (int)packet->len) || (status == 0))
         status = 0;
       else
         status = 1;
-      break;
+#else
+      status = 1;
 #endif
+      break;
 #ifdef HAVE_VMNET_NETWORK
     case ETH_API_VMN:
       {
@@ -4097,12 +4138,10 @@ int eth_read(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 int status;
 
-/* make sure device exists */
+/* make sure device exists, packet is also valid: */
 
-if ((!dev) || (dev->eth_api == ETH_API_NONE)) return 0;
-
-/* make sure packet exists */
-if (!packet) return 0;
+if (dev == NULL || dev->eth_api == ETH_API_NONE || packet == NULL)
+  return 0;
 
 packet->len = 0;
 #if !defined (USE_READER_THREAD)
@@ -4115,13 +4154,29 @@ dev->read_callback = routine;
 /* dispatch read request to either receive a filtered packet or timeout */
 do {
   switch (dev->eth_api) {
-#ifdef HAVE_PCAP_NETWORK
-    case ETH_API_PCAP:
-      status = pcap_dispatch((pcap_t*)dev->handle, 1, &_eth_callback, (u_char*)dev);
+    case ETH_API_NONE:
+      status = -1;
       break;
+    case ETH_API_PCAP:
+#ifdef HAVE_PCAP_NETWORK
+      status = pcap_dispatch((pcap_t*)dev->handle, 1, &_eth_callback, (u_char*)dev);
+#else
+      status = -1;
 #endif
-#ifdef HAVE_TAP_NETWORK
+      break;
+    case ETH_API_NAT:
+#ifdef HAVE_SLIRP_NETWORK
+  status = sim_slirp_select((SLIRP *) dev->handle, 250);
+
+  if (status > 0)
+    sim_slirp_dispatch((SLIRP *) dev->handle);
+  else if (status < 0 && errno == EINTR)
+    status = 0;
+#else
+  status = -1;
+#endif
     case ETH_API_TAP:
+#ifdef HAVE_TAP_NETWORK
       if (1) {
         struct pcap_pkthdr header;
         int len;
@@ -4141,10 +4196,12 @@ do {
             status = 0;
           }
         }
-      break;
+#else
+      status = -1;
 #endif /* HAVE_TAP_NETWORK */
-#ifdef HAVE_VDE_NETWORK
+      break;
     case ETH_API_VDE:
+#ifdef HAVE_VDE_NETWORK
       if (1) {
         struct pcap_pkthdr header;
         int len;
@@ -4164,8 +4221,10 @@ do {
             status = 0;
           }
         }
-      break;
+#else
+      status = -1;
 #endif /* HAVE_VDE_NETWORK */
+      break;
 #ifdef HAVE_VMNET_NETWORK
     case ETH_API_VMN:
       {
