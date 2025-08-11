@@ -4429,9 +4429,6 @@ if (!dev) return SCPE_UNATT;
 /* filter count OK? */
 if ((addr_count < 0) || ((addr_count + (match_broadcast ? 1 : 0)) > ETH_FILTER_MAX))
   return SCPE_ARG;
-else
-  if (addr_count != 0)
-     return SCPE_ARG;
 
 /* test reflections.  This is done early in this routine since eth_reflect */
 /* calls eth_filter recursively and thus changes the state of the device. */
