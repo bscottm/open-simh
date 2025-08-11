@@ -2019,13 +2019,14 @@ ETH_DEV *dev;
 int status = 0;
 int (*queue_func)(const ETH_DEV *);
 
-sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
 dev = thr_info->eth_device;
 #if !defined(__APPLE__)
 pthread_setname_np(pthread_self(), thr_info->thr_name);
 #else
 pthread_setname_np(thr_info->thr_name);
 #endif
+
+sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
 dev->reader_status = ETH_THREAD_RUNNING;
 
 /* Boost Priority for this I/O thread vs the CPU instruction execution
@@ -2236,13 +2237,14 @@ ETH_WRITE_REQUEST *request = NULL;
    this thread needs to run */
 sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
-sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
 dev = thr_info->eth_device;
 #if !defined(__APPLE__)
 pthread_setname_np(pthread_self(), thr_info->thr_name);
 #else
 pthread_setname_np(thr_info->thr_name);
 #endif
+
+sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
 dev->writer_status = ETH_THREAD_IDLE;
 
 /* Signal that we've started... */
@@ -3023,7 +3025,6 @@ uint32 i;
 int responses = 0;
 uint32 offset, function;
 char mac_string[32];
-ETH_MAC filter_mac[1];
 
 if (reflections)
     *reflections = 0;
@@ -3114,8 +3115,7 @@ eth_copy_mac(&send.msg[18], mac);                       /* Forward Destination *
 send.msg[24] = 1;                                       /* Reply */
 send.msg[25] = 0;
 
-eth_copy_mac(filter_mac[0], mac);                       /* target address */
-eth_filter(dev, 1, filter_mac, 0, 0);
+eth_filter(dev, 1, (const ETH_MAC *) mac, 0, 0);
 
 /* send the packet */
 status = _eth_write (dev, &send, NULL);
@@ -4016,8 +4016,8 @@ switch (dev->eth_api) {
     eth_packet_trace (dev, data, header->len, "received");
 
     for (i = 0; i < dev->addr_count; i++) {
-      if (memcmp(data, dev->filter_address[i], 6) == 0) to_me = 1;
-      if (memcmp(&data[6], dev->filter_address[i], 6) == 0) from_me = 1;
+      if (eth_mac_cmp(data, dev->filter_address[i]) == 0) to_me = 1;
+      if (eth_mac_cmp(&data[6], dev->filter_address[i]) == 0) from_me = 1;
     }
 
     /* all multicast mode? */
@@ -4304,7 +4304,7 @@ if (status < 0) {
 return status;
 }
 
-t_stat eth_bpf_filter (ETH_DEV* dev, int addr_count, ETH_MAC* const filter_address,
+t_stat eth_bpf_filter (ETH_DEV* dev, int addr_count, const ETH_MAC filter_address[],
                        ETH_BOOL all_multicast, ETH_BOOL promiscuous,
                        int reflections,
                        ETH_MAC physical_addr,
@@ -4430,7 +4430,7 @@ if (!dev) return SCPE_UNATT;
 if ((addr_count < 0) || ((addr_count + (match_broadcast ? 1 : 0)) > ETH_FILTER_MAX))
   return SCPE_ARG;
 else
-  if (!addresses && (addr_count != 0))
+  if (addr_count != 0)
      return SCPE_ARG;
 
 /* test reflections.  This is done early in this routine since eth_reflect */
