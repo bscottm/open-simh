@@ -5824,9 +5824,13 @@ return SCPE_OK;
 
 t_stat sim_set_asynch (int32 flag, CONST char *cptr)
 {
+#ifdef SIM_ASYNCH_IO
 const t_bool flag_bool = (flag != 0);
+#endif
+
 if (cptr && (*cptr != 0))                               /* now eol? */
     return SCPE_2MARG;
+
 #ifdef SIM_ASYNCH_IO
 if (flag_bool == sim_asynch_enabled)                    /* already set correctly? */
     return SCPE_OK;
@@ -13338,7 +13342,7 @@ uint8 *match_buf = NULL;
 uint32 match_size;
 char *pattern_buf = NULL;
 sim_regex_t *compiled_re = NULL;
-sim_re_capture_t re_nsub;
+sim_re_capture_t re_nsub = 0;
 size_t i;
 
 /* Validate the match string */
