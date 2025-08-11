@@ -3167,7 +3167,7 @@ t_stat imp_attach(UNIT* uptr, CONST char* cptr)
       return sim_messagef (SCPE_NOATT, "%s: MAC Address Conflict on LAN for address %s\n",
                       imp_dev.name, buf);
     }
-    if (SCPE_OK != eth_filter(&imp_data.etherface, 2, &imp_data.mac, 0, 0)) {
+    if (SCPE_OK != eth_filter(&imp_data.etherface, 2, imp_data.macs, 0, 0)) {
       eth_close(&imp_data.etherface);
       free(tptr);
       return sim_messagef (SCPE_NOATT, "%s: Can't set packet filter for MAC Address %s\n",
