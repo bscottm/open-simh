@@ -419,7 +419,7 @@ static SIM_INLINE unit_aio_list_t aio_queue_worklist()
  */
 static SIM_INLINE void aio_enqueue_unit(UNIT *unit)
 {
-    UNIT *q, *unit_next;
+    UNIT *q;
     t_bool did_xchg;
 
     do {
