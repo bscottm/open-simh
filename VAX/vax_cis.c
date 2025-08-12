@@ -1199,7 +1199,7 @@ switch (opc) {                                          /* case on opcode */
         RSVD_INST_FAULT(opc);
         }
                                                         /* end case op */
-return cc;
+UNREACHABLE_RET(cc);
 }
 
 /* Get packed decimal string

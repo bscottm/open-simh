@@ -1030,7 +1030,7 @@ for (p = &regtable[0]; p->low != 0; p++) {
     }
 ssc_bto = ssc_bto | SSCBTO_BTO | SSCBTO_RWT;
 MACH_CHECK (MCHK_READ);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 /* ReadRegU - read register space, unaligned
@@ -1124,7 +1124,7 @@ switch (rg) {
         MACH_CHECK (MCHK_READ);
         }
 
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void cmctl_wr (int32 pa, int32 val, int32 lnt)

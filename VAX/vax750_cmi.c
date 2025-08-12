@@ -454,7 +454,7 @@ if (ADDR_IS_REG (pa)) {                                 /* reg space? */
     }
 cmi_set_tmo ();                                         /* timeout */
 MACH_CHECK (MCHK_BPE);                                  /* machine check */
-return 0;
+UNREACHABLE_RET(0);
 } 
 
 /* WriteReg - write register space

@@ -229,7 +229,7 @@ if (iodispR[idx]) {
     }
 cq_merr (pa);
 MACH_CHECK (MCHK_READ);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void WriteQb (uint32 pa, int32 val, int32 mode)
@@ -579,7 +579,7 @@ if (ADDR_IS_MEM (ma))
     return M[ma >> 2];
 cq_serr (ma);                                           /* set err */
 MACH_CHECK (MCHK_READ);                                 /* mcheck */
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void cqmap_wr (int32 pa, int32 val, int32 lnt)
@@ -632,7 +632,7 @@ if (ADDR_IS_QVM(pa)) {                                  /* QVSS memory? */
     return SCPE_OK;
     }
 MACH_CHECK (MCHK_READ);                                 /* err? mcheck */
-return SCPE_OK;
+UNREACHABLE_RET(SCPE_OK);
 }
 
 t_stat cqm_wr (int32 dat, int32 pa, int32 md)
