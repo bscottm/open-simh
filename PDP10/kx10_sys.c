@@ -630,7 +630,7 @@ t_stat load_sav (FILE *fileref, int ftype)
             M[pa] = data;
         }                                              /* end if  count*/
     }
-    return SCPE_OK;
+    UNREACHABLE_RET(SCPE_OK);
 }
 
 /* EXE file loader
@@ -829,7 +829,7 @@ t_stat load_exb (FILE *fileref, int ftype)
             }
         }
     }
-    return SCPE_FMT;
+    UNREACHABLE_RET(SCPE_FMT);
 }
 
 /* Master loader */

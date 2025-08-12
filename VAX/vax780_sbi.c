@@ -506,7 +506,7 @@ if (ADDR_IS_REG (pa)) {                                 /* reg space? */
     }
 sbi_set_tmo (pa);                                       /* timeout */
 MACH_CHECK (MCHK_RD_F);                                 /* machine check */
-return 0;
+UNREACHABLE_RET(0);
 } 
 
 /* WriteReg - write register space

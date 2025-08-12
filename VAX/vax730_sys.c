@@ -383,7 +383,7 @@ if (ADDR_IS_REG (pa)) {                                 /* reg space? */
         }
     }
 MACH_CHECK (MCHK_NXM);
-return 0;
+UNREACHABLE_RET(0);
 } 
 
 /* WriteReg - write register space

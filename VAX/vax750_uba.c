@@ -272,7 +272,7 @@ if (ADDR_IS_IOP (pa)) {                                 /* iopage,!init */
     }
 cmi_set_tmo();
 MACH_CHECK(MCHK_BPE);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void WriteUb (uint32 pa, int32 val, int32 mode)

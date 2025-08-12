@@ -788,7 +788,7 @@ t_stat sim_disk_wrsect (UNIT *uptr, t_lba lba, uint8 *buf, t_seccnt *sectswritte
 {
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 uint32 f = DK_GET_FMT (uptr);
-t_stat r;
+t_stat r = SCPE_OK;
 uint8 *tbuf = NULL;
 t_seccnt written = 0;
 
@@ -2431,6 +2431,7 @@ return SCPE_OK;
 
 static t_stat store_disk_footer (UNIT *uptr, const char *dtype)
 {
+#if 0
 DEVICE *dptr;
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 struct stat statb;
@@ -2438,8 +2439,6 @@ struct simh_disk_footer *f;
 time_t now = time (NULL);
 t_offset total_sectors;
 t_offset highwater;
-
-return SCPE_OK;
 
 if ((dptr = find_dev_from_unit (uptr)) == NULL)
     return SCPE_NOATT;
@@ -2491,11 +2490,14 @@ switch (f->AccessFormat) {
     default:
         break;
     }
+#endif
+
 return SCPE_OK;
 }
 
 static t_stat update_disk_footer (UNIT *uptr)
 {
+#if 0
 DEVICE *dptr;
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 struct stat statb;
@@ -2503,8 +2505,6 @@ struct simh_disk_footer *f;
 t_offset total_sectors;
 t_offset highwater;
 t_offset footer_highwater;
-
-return SCPE_OK;
 
 if ((dptr = find_dev_from_unit (uptr)) == NULL)
     return SCPE_NOATT;
@@ -2547,6 +2547,8 @@ switch (f->AccessFormat) {
     default:
         break;
     }
+#endif
+
 return SCPE_OK;
 }
 
@@ -2664,7 +2666,7 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
         t_seccnt sectors_per_buffer = (t_seccnt)((1024*1024)/sector_size);
         t_lba total_sectors = (t_lba)((target_capac*capac_factor)/(sector_size/((dptr->flags & DEV_SECTORS) ? 512 : 1)));
         t_seccnt sects = sectors_per_buffer;
-        t_seccnt sects_read;
+        t_seccnt sects_read = 0;
 
         if (!copy_buf) {
             if (strcmp ("VHD", dest_fmt) == 0)
@@ -2709,7 +2711,7 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
             sim_messagef (r, "\n%s: Error copying: %s.\n", sim_uname (uptr), sim_error_text (r));
         if ((r == SCPE_OK) && (sim_switches & SWMASK ('V'))) {
             uint8 *verify_buf = (uint8*) malloc (1024*1024);
-            t_seccnt sects_read, verify_read;
+            t_seccnt verify_read;
 
             if (!verify_buf) {
                 if (strcmp ("VHD", dest_fmt) == 0)

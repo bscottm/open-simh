@@ -117,7 +117,7 @@ int32 r_octa[4];
 
 if ((cpu_instruction_set & VAX_EXTAC) == 0) {      /* Implemented? */
     RSVD_INST_FAULT(opc);
-    return cc;
+    UNREACHABLE_RET(cc);
     }
 
 switch (opc) {

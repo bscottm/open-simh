@@ -1258,6 +1258,19 @@ struct MEMFILE {
                                                     sim_printf("%s failed at %s line %d\n", #_Expression, __FILE__, __LINE__);       \
                                                     abort();}
 
+/* UNREACHABLE: Mark code as unreachable. Reduces compiler whining.
+ * UNREACHABLE_RET(VAL): Same as UNREACHABLE, unless the compiler doesn't support an
+ *   unreachable builtin and a return value from a function is needed. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define UNREACHABLE __builtin_unreachable()
+#  define UNREACHABLE_RET(VAL) UNREACHABLE
+#elif defined(_MSC_VER) && _MSC_VER >= 1400
+#  define UNREACHABLE __assume(0)
+#  define UNREACHABLE_RET(VAL) UNREACHABLE
+#else
+#  define UNREACHABLE do {} while (0)
+#  define UNREACHABLE_RET(VAL) return (VAL);
+#endif
 
 /*== Atomic/synchronized functions ==*/
 
