@@ -4617,10 +4617,14 @@ int i;
 const char *ap;
 const char *fixup_needed = strchr (gbuf, ':');
 char *tgbuf = NULL;
-size_t tgbuf_size = MAX(rbuf_size, 1 + (size_t)(fixup_needed - gbuf));
+/* If fixup_needed == NULL, fixup - gbuf will end up being a VERY large number, so
+ * default to a reasonable size. */
+size_t tgbuf_size = rbuf_size;
 
-if (fixup_needed) {
-    tgbuf = (char *)calloc (tgbuf_size, 1);
+if (fixup_needed != NULL) {
+    tgbuf_size = 1 + (size_t) (fixup_needed - gbuf);
+    tgbuf = (char *) calloc (tgbuf_size, 1);
+    tgbuf[fixup_needed - gbuf] = '\0';
     memcpy (tgbuf, gbuf, (fixup_needed - gbuf));
     gbuf = tgbuf;
     }
@@ -11236,7 +11240,7 @@ CONST char *get_sim_sw (CONST char *cptr)
 int32 lsw, lnum;
 char gbuf[CBUFSIZE];
 
-while (*cptr == '-') {                                  /* while switches */
+while (cptr != NULL && *cptr == '-') {                  /* while switches */
     cptr = get_glyph (cptr, gbuf, 0);                   /* get switch glyph */
     switch (get_switches (gbuf, &lsw, &lnum)) {         /* parse */
         case SW_ERROR:
