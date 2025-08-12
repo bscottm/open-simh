@@ -586,7 +586,7 @@ void xq_debug_turbo_setup(CTLR* xq);
 
 /* Multicontroller support */
 
-CTLR* xq_unit2ctlr(UNIT* uptr)
+CTLR* xq_unit2ctlr(const UNIT* uptr)
 {
   unsigned int i,j;
   for (i=0; i<XQ_MAX_CONTROLLERS; i++)
@@ -594,17 +594,17 @@ CTLR* xq_unit2ctlr(UNIT* uptr)
       if (&xq_ctrl[i].unit[j] == uptr)
         return &xq_ctrl[i];
   /* not found */
-  return 0;
+  return NULL;
 }
 
-CTLR* xq_dev2ctlr(DEVICE* dptr)
+CTLR* xq_dev2ctlr(const DEVICE* dptr)
 {
   int i;
   for (i=0; i<XQ_MAX_CONTROLLERS; i++)
     if (xq_ctrl[i].dev == dptr)
       return &xq_ctrl[i];
   /* not found */
-  return 0;
+  return NULL;
 }
 
 CTLR* xq_pa2ctlr(uint32 PA)
@@ -623,8 +623,8 @@ CTLR* xq_pa2ctlr(uint32 PA)
 t_stat xq_ex (t_value* vptr, t_addr addr, UNIT* uptr, int32 sw)
 {
   /* on PDP-11, allow EX command to look at bootrom */
-  CTLR* xq = xq_unit2ctlr(uptr);
-  uint16 *bootrom = NULL;
+  const CTLR* xq = xq_unit2ctlr(uptr);
+  const uint16 *bootrom = NULL;
 
   if (xq->var->type == XQ_T_DEQNA)
     bootrom = xq_bootrom_deqna;
@@ -895,7 +895,6 @@ t_stat xq_set_throttle (UNIT* uptr, int32 val, CONST char* cptr, void* desc)
   CTLR* xq = xq_unit2ctlr(uptr);
   char tbuf[CBUFSIZE], gbuf[CBUFSIZE];
   const char *tptr = cptr;
-  uint32 newval;
   uint32 set_time = xq->var->throttle_time;
   uint32 set_burst = xq->var->throttle_burst;
   uint32 set_delay = xq->var->throttle_delay;
@@ -919,6 +918,8 @@ t_stat xq_set_throttle (UNIT* uptr, int32 val, CONST char* cptr, void* desc)
       if (set_delay == ETH_THROT_DISABLED_DELAY)
         set_delay = ETH_THROT_DEFAULT_DELAY;
       while (*tptr) {
+        uint32 newval;
+
         tptr = get_glyph_nc (tptr, tbuf, ';');
         cptr = tbuf;
         cptr = get_glyph (cptr, gbuf, '=');
@@ -2105,10 +2106,10 @@ void xq_read_callback(CTLR* xq, int status)
 
   if ((xq->var->csr & XQ_CSR_RE) || (xq->var->mode == XQ_T_DELQA_PLUS)) { /* receiver enabled */
     /* process any packets locally that can be */
-    t_stat status = xq_process_local (xq, &xq->var->read_buffer);
+    t_stat process_local = xq_process_local (xq, &xq->var->read_buffer);
 
     /* add packet to read queue */
-    if (status != SCPE_OK)
+    if (process_local != SCPE_OK)
       ethq_insert(&xq->var->ReadQ, 2, &xq->var->read_buffer, status);
   } else {
     xq->var->stats.dropped += 1;
@@ -2609,6 +2610,7 @@ t_stat xq_reset(DEVICE* dptr)
   if (xq->var->etherface) {
     /* restore filter on ROM mac address */
     status = eth_filter (xq->var->etherface, 1, &xq->var->mac, 0, 0);
+    SIM_UNUSED_VAR(status);
     xq_csr_set_clr(xq, XQ_CSR_OK, 0);
 
     /* start service timer */
@@ -2664,7 +2666,7 @@ t_stat xq_boot_host(CTLR* xq)
 
 t_stat xq_system_id (CTLR* xq, const ETH_MAC dest, uint16 receipt_id)
 {
-  static uint16 receipt = 0;
+  static uint16 receipt = 0; /* Always 0? */
   ETH_PACK system_id;
   uint8* const msg = &system_id.msg[0];
   t_stat status;
@@ -3087,8 +3089,8 @@ void xq_debug_setup(CTLR* xq)
   }
 
   if (xq->var->write_buffer.len > 128) {
-    char buffer[20] = {0};
     uint16 len = (uint16)xq->var->write_buffer.len;
+    *buffer = '\0';
     if (len & XQ_SETUP_MC) strcat(buffer, "MC ");
     if (len & XQ_SETUP_PM) strcat(buffer, "PM ");
     if (len & XQ_SETUP_LD) strcat(buffer, "LD ");
