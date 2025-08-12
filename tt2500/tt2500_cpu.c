@@ -543,7 +543,7 @@ t_stat sim_instr (void)
       return STOP_HALT;
   }
 
-  return SCPE_OK;
+  UNREACHABLE_RET(SCPE_OK);
 }
 
 static t_stat

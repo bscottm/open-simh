@@ -2323,8 +2323,8 @@ if (wakeup_needed) {
   sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
   sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
   }
-#endif
 return SCPE_OK;
+#endif
 }
 
 /* eth_clr_async

@@ -190,7 +190,7 @@ if (iodispR[idx]) {
     return val;
     }
 MACH_CHECK (MCHK_READ);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void WriteQb (uint32 pa, int32 val, int32 mode)
@@ -506,7 +506,7 @@ else if (sys_model == 2) {                              /* VAXstation II/GPX? */
     }
 #endif
 MACH_CHECK (MCHK_READ);                                 /* err? mcheck */
-return 0;
+UNREACHABLE_RET(0);
 }
 
 t_stat qbmem_wr (int32 dat, int32 pa, int32 md)

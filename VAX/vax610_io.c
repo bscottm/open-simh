@@ -114,7 +114,7 @@ if (iodispR[idx]) {
     return val;
     }
 MACH_CHECK (MCHK_READ);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void WriteQb (uint32 pa, int32 val, int32 mode)

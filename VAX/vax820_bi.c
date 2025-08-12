@@ -526,7 +526,7 @@ for (p = &regtable[0]; p->low != 0; p++) {
         return p->read (pa);
     }
 MACH_CHECK (MCHK_BIERR);                                /* machine check */
-return 0;
+UNREACHABLE_RET(0);
 } 
 
 /* WriteReg - write register space

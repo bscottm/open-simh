@@ -295,7 +295,7 @@ if (ADDR_IS_IOP (pa)) {                                 /* iopage */
         }
     }
 MACH_CHECK(MCHK_IIA);
-return 0;
+UNREACHABLE_RET(0);
 }
 
 void WriteUb (uint32 pa, int32 val, int32 mode)
