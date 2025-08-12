@@ -618,10 +618,11 @@ t_stat sim_disk_clr_async (UNIT *uptr)
 #if !defined(SIM_ASYNCH_IO)
 return SCPE_NOFNC;
 #else
-struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
+struct disk_context *ctx;
 
 /* make sure device exists */
-if (!ctx) return SCPE_UNATT;
+if (uptr == NULL || (ctx = (struct disk_context *) uptr->disk_ctx, ctx == NULL))
+    return SCPE_UNATT;
 
 sim_debug_unit (ctx->dbit, uptr, "sim_disk_clr_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
 
@@ -946,16 +947,21 @@ return SCPE_OK;
 */
 static void _sim_disk_io_flush (UNIT *uptr)
 {
-uint32 f = DK_GET_FMT (uptr);
+if (uptr == NULL)
+    return;
 
 #if defined (SIM_ASYNCH_IO)
-struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
+struct disk_context *ctx;
+
+if (ctx = (struct disk_context *)uptr->disk_ctx, ctx == NULL)
+    return;
 
 sim_disk_clr_async (uptr);
 if (sim_asynch_enabled)
     sim_disk_set_async (uptr, ctx->asynch_io_latency);
 #endif
-switch (f) {                                            /* case on format */
+
+switch (DK_GET_FMT (uptr)) {                            /* case on format */
     case DKUF_F_STD:                                    /* Simh */
         fflush (uptr->fileref);
         break;
