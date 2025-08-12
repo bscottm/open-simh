@@ -980,7 +980,7 @@ uint32 new_rtime, delta_rtime, last_idle_pct, catchup_ticks_curr;
 int32 delta_vtime;
 double new_gtime;
 int32 new_currd;
-int32 itmr;
+size_t itmr;
 RTC *rtc;
 
 if (tmr == SIM_INTERNAL_CLK)
@@ -1255,7 +1255,8 @@ return (sim_idle_rate_ms != 0);
 /* sim_show_timers - show running timer information */
 t_stat sim_show_timers(FILE *st, DEVICE *dptr, UNIT *uptr, int32 val, CONST char *desc)
 {
-    int tmr, clocks;
+    size_t tmr;
+    int clocks;
     struct timespec now;
     time_t time_t_now;
     size_t calb_tmr = (sim_calb_tmr == INVALID_TIMER) ? sim_calb_tmr_last : sim_calb_tmr;
@@ -1308,7 +1309,8 @@ t_stat sim_show_timers(FILE *st, DEVICE *dptr, UNIT *uptr, int32 val, CONST char
                     sim_uname(rtc->clock_unit), (tmr == SIM_NTIMERS) ? ")" : "");
         }
 
-        fprintf(st, "%s%sTimer %d:\n", sim_asynch_timer ? "Asynchronous " : "", rtc->hz ? "Calibrated " : "Uncalibrated ", tmr);
+        fprintf(st, "%s%sTimer %" SIZE_T_FMT "d:\n",
+                sim_asynch_timer ? "Asynchronous " : "", rtc->hz ? "Calibrated " : "Uncalibrated ", tmr);
         if (rtc->hz) {
             fprintf(st, "  Running at:                %d Hz\n", rtc->hz);
             fprintf(st, "  Tick Size:                 %s\n", (rtc->clock_tick_size > 0.0 ? sim_fmt_secs(rtc->clock_tick_size) : "0"));
