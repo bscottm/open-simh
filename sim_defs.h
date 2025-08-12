@@ -1272,6 +1272,12 @@ struct MEMFILE {
 #  define UNREACHABLE_RET(VAL) return (VAL);
 #endif
 
+/* SIM_UNUSED_ARG(var), SIM_UNUSED_VAR(): Indicate that an argument or variable is not used despite being
+ * set. Setting a variable is often useful while debugging to see a result, even though it's not used in
+ * the code. This is a favorite compiler whine. */
+#define SIM_UNUSED_ARG(VAR) (void) (VAR)
+#define SIM_UNUSED_VAR(ARG) (void) (ARG)
+
 /*== Atomic/synchronized functions ==*/
 
 /*=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
