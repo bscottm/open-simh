@@ -258,7 +258,8 @@ typedef enum {
   ETH_API_TAP,                                         /* tun/tap API in use */
   ETH_API_VDE,                                         /* VDE API in use */
   ETH_API_UDP,                                         /* UDP API in use */
-  ETH_API_NAT                                          /* NAT (SLiRP) API in use */
+  ETH_API_NAT,                                         /* NAT (SLiRP) API in use */
+  ETH_API_VMN                                          /* Integrated vmnet.framework NAT */
 } eth_api_t;
 
 #if defined(USE_READER_THREAD)
