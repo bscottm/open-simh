@@ -26,7 +26,9 @@ if (WITH_REGEX)
 endif ()
 
 if (WITH_REGEX OR WITH_VIDEO)
-    set(ZLIB_USE_STATIC_LIBS ON)
+    if (WIN32 AND NOT BUILD_SHARED_DEPS)
+        set(ZLIB_USE_STATIC_LIBS ON)
+    endif ()
     find_package(ZLIB)
 endif ()
 
@@ -40,6 +42,7 @@ if (WITH_VIDEO)
     else ()
         ## vcpkg strategy:
         find_package(PNG REQUIRED)
+        find_package(Freetype)
         find_package(SDL2 CONFIG OPTIONAL_COMPONENTS SDL2main)
         find_package(SDL2_ttf CONFIG)
     endif ()
